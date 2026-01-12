@@ -18,7 +18,7 @@ class MainWindow(ctk.CTk):
         
         self.title("SnapCapsule")
         
-        # Window Icon
+        # --- SET WINDOW ICON ---
         try:
             icon_path = assets.get_path("snapcapsule.ico")
             if os.path.exists(icon_path):
@@ -26,7 +26,7 @@ class MainWindow(ctk.CTk):
         except Exception as e:
             print(f"Warning: Could not set window icon: {e}")
 
-        # Geometry
+        # --- PROPORTIONAL MINIMUM SIZE ---
         screen_w = self.winfo_screenwidth()
         screen_h = self.winfo_screenheight()
         default_w, default_h = 1200, 800
@@ -37,7 +37,6 @@ class MainWindow(ctk.CTk):
         
         ctk.set_appearance_mode("Dark")
         
-        # Load Data
         self.chat_index, self.memories, self.profile = self.data_manager.reload()
         
         self.view_home = None
@@ -47,7 +46,6 @@ class MainWindow(ctk.CTk):
 
         self._setup_ui()
         
-        # Global Scroll Binding
         self.bind_all("<MouseWheel>", self._on_global_mouse_wheel)
         self.bind_all("<Button-4>", self._on_global_mouse_wheel)
         self.bind_all("<Button-5>", self._on_global_mouse_wheel)
@@ -71,7 +69,7 @@ class MainWindow(ctk.CTk):
         self.nav_frame.grid(row=0, column=0, sticky="nsew")
         self.nav_frame.grid_propagate(False)
         
-        # Logo
+        # --- APP LOGO ---
         logo_img = assets.load_image("snapcapsule", size=(50, 50))
         if logo_img:
             ctk.CTkLabel(self.nav_frame, text="", image=logo_img).pack(pady=(25, 15))
@@ -136,11 +134,9 @@ class MainWindow(ctk.CTk):
         self._hide_all_views()
         self._update_active_tab("chat")
         if not self.view_chat:
-            # --- UPDATED CONSTRUCTOR CALL ---
             self.view_chat = ChatView(self.content_frame, self.data_manager, self.profile)
             self.view_chat.grid(row=0, column=0, sticky="nsew")
         else:
-            # Update data if needed (though data_manager ref is constant)
             self.view_chat.chat_list = self.chat_index 
             self.view_chat.grid(row=0, column=0, sticky="nsew")
 
@@ -170,7 +166,6 @@ class MainWindow(ctk.CTk):
         def is_inside(parent_widget):
             return parent_widget and str(parent_widget) in w_str
 
-        # Logic to find the specific scrollable frame under mouse
         if self.view_memories and self.view_memories.winfo_ismapped():
             target = self.view_memories.scroll_mems
         elif self.view_chat and self.view_chat.winfo_ismapped():
@@ -179,24 +174,27 @@ class MainWindow(ctk.CTk):
             else:
                 target = self.view_chat.scroll_chat
         elif self.view_profile and self.view_profile.winfo_ismapped():
-            # Check all profile scroll areas
-            for scroll_area in [
-                getattr(self.view_profile, 'friends_scroll', None),
-                getattr(self.view_profile, 'device_scroll', None),
-                getattr(self.view_profile, 'name_scroll', None),
-                getattr(self.view_profile, 'map_scroll', None)
-            ]:
-                if scroll_area and is_inside(scroll_area):
-                    target = scroll_area
-                    break
+            if hasattr(self.view_profile, 'friends_scroll') and is_inside(self.view_profile.friends_scroll):
+                target = self.view_profile.friends_scroll
+            elif hasattr(self.view_profile, 'device_scroll') and is_inside(self.view_profile.device_scroll):
+                target = self.view_profile.device_scroll
+            elif hasattr(self.view_profile, 'name_scroll') and is_inside(self.view_profile.name_scroll):
+                target = self.view_profile.name_scroll
+            elif hasattr(self.view_profile, 'map_scroll') and is_inside(self.view_profile.map_scroll):
+                target = self.view_profile.map_scroll
 
         if target:
             try:
+                steps = 0
                 if os.name == 'nt':
                      steps = int(-1 * (event.delta / 120)) * SCROLL_SPEED
-                     target._parent_canvas.yview_scroll(steps, "units")
                 elif event.num == 4:
-                     target._parent_canvas.yview_scroll(-1 * SCROLL_SPEED, "units")
+                     steps = -1 * SCROLL_SPEED
                 elif event.num == 5:
-                     target._parent_canvas.yview_scroll(1 * SCROLL_SPEED, "units")
+                     steps = 1 * SCROLL_SPEED
+                
+                if steps == 0: return
+
+                # CRITICAL FIX: Removed boundary checks to allow native handling
+                target._parent_canvas.yview_scroll(steps, "units")
             except: pass

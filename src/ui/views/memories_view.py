@@ -1,71 +1,98 @@
 import customtkinter as ctk
 from PIL import Image, ImageOps
 import os
+import math
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from utils.image_utils import extract_video_thumbnail, add_play_icon
 from ui.theme import *
 from ui.components.media_viewer import GlobalMediaPlayer
-from utils.assets import assets  # <--- NEW IMPORT
+from utils.assets import assets
 
 class MemoryCard(ctk.CTkFrame):
-    def __init__(self, parent, memory, width, click_callback):
+    def __init__(self, parent, memory, width, click_callback, executor):
         super().__init__(parent, fg_color="transparent", width=width, height=200)
         self.pack_propagate(False) 
         self.path = memory['path']
-        self.current_width = width
         self.click_callback = click_callback
+        self.executor = executor
+        self.is_loaded = False
         
-        if self.path and os.path.exists(self.path):
-            self.render_preview(self.path)
-        else:
-            self.render_placeholder(is_missing=True)
+        self.btn = ctk.CTkButton(self, text="", fg_color="#1a1a1a", hover_color="#252525",
+                                 corner_radius=6, command=lambda: self.click_callback(self.path))
+        self.btn.pack(expand=True, fill="both", padx=2, pady=2)
+        
+        self._set_placeholder_state(is_loading=True, force=True)
+        self.load_image()
 
-    def render_placeholder(self, is_missing=False):
-        # UPDATED: Use Icons
-        icon_name = "alert-triangle" if is_missing else "file-text"
-        label_text = "Missing" if is_missing else "No Preview"
+    def _set_placeholder_state(self, is_missing=False, is_loading=False, force=False):
+        if not force and not self.winfo_exists(): return
         
-        bg = ctk.CTkFrame(self, fg_color="#1a1a1a", corner_radius=0)
-        bg.pack(expand=True, fill="both")
-        
-        # Icon Button (Centered)
+        if is_loading:
+            icon_name = "image"
+            text = ""
+            color = "#1a1a1a"
+        else:
+            icon_name = "alert-triangle" if is_missing else "file-text"
+            text = "Missing" if is_missing else "No Preview"
+            color = "#2b1111" if is_missing else "#1a1a1a"
+            
         icon = assets.load_icon(icon_name, size=(32, 32))
         
-        btn = ctk.CTkButton(bg, 
-                            text=label_text, 
-                            image=icon, 
-                            compound="top",
-                            fg_color="transparent", 
-                            hover_color="#252525", 
-                            text_color="#666",
-                            font=("Segoe UI", 12, "bold"),
-                            command=lambda: self.click_callback(self.path))
-        btn.place(relx=0, rely=0, relwidth=1, relheight=1)
+        self.btn.configure(image=icon, text=text, compound="top", 
+                           fg_color=color, font=("Segoe UI", 12, "bold"), text_color="#666")
+        self.btn.image = icon
 
-    def render_preview(self, path):
-        ext = os.path.splitext(path)[1].lower()
-        pil_img = None
-        is_video = False
+    def load_image(self):
+        if self.is_loaded or not self.path: return
+        self.is_loaded = True
+        self.executor.submit(self._load_job)
+
+    def _load_job(self):
         try:
-            if ext in ['.jpg', '.jpeg', '.png']:
-                pil_img = Image.open(path)
-            elif ext in ['.mp4', '.mov']:
+            if not os.path.exists(self.path):
+                self.after(0, lambda: self._set_placeholder_state(is_missing=True))
+                return
+
+            ext = os.path.splitext(self.path)[1].lower()
+            pil_img = None
+            is_video = False
+            
+            if ext in ['.jpg', '.jpeg', '.png', '.webp']:
+                pil_img = Image.open(self.path)
+                pil_img.thumbnail((300, 300))
+            elif ext in ['.mp4', '.mov', '.avi']:
                 is_video = True
-                pil_img = extract_video_thumbnail(path)
+                pil_img = extract_video_thumbnail(self.path)
+                if pil_img: pil_img.thumbnail((300, 300))
 
             if pil_img:
-                pil_img = ImageOps.fit(pil_img, (self.current_width, 200), method=Image.Resampling.LANCZOS)
-                if is_video: pil_img = add_play_icon(pil_img)
-                ctk_img = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(self.current_width, 200))
-                self.image_ref = ctk_img 
-                
-                btn = ctk.CTkButton(self, text="", image=ctk_img, fg_color="transparent", hover=False, 
-                                    command=lambda: self.click_callback(self.path), corner_radius=0)
-                btn.pack(expand=True, fill="both")
+                self.after(0, lambda: self._apply_image(pil_img, is_video))
             else:
-                self.render_placeholder(is_missing=False)
-        except: 
-            self.render_placeholder(is_missing=False)
+                self.after(0, lambda: self._set_placeholder_state(is_missing=False))
+        except:
+            self.after(0, lambda: self._set_placeholder_state(is_missing=True))
+
+    def _apply_image(self, pil_img, is_video):
+        if not self.winfo_exists(): return
+        w = self.winfo_width()
+        if w < 50: w = 200
+        
+        try:
+            pil_img = ImageOps.fit(pil_img, (w, 200), method=Image.Resampling.LANCZOS)
+            if is_video: pil_img = add_play_icon(pil_img)
+            
+            ctk_img = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(w, 200))
+            self.btn.configure(image=ctk_img, text="", fg_color="transparent")
+            self.btn.image = ctk_img
+        except:
+            self._set_placeholder_state(is_missing=False)
+
+class RowFrame(ctk.CTkFrame):
+    """Simple container for a row of cards."""
+    def __init__(self, parent):
+        super().__init__(parent, fg_color="transparent", height=200)
+        self.pack_propagate(False)
 
 class MonthHeader(ctk.CTkFrame):
     def __init__(self, parent, text):
@@ -79,106 +106,163 @@ class MemoriesView(ctk.CTkFrame):
     def __init__(self, parent, memories_data):
         super().__init__(parent, fg_color="transparent")
         self.memories = memories_data
-        self.page = 0
-        self.grid_items = [] 
+        
+        self.PAGE_SIZE = 50
+        self.current_page = 1
+        self.total_pages = 1
+        
+        self.executor = ThreadPoolExecutor(max_workers=4)
         self.last_width = 0
-        self.total_count = 0
-        self.video_count = 0
-        self.photo_count = 0
-        self._calculate_stats()
-        self.scroll_mems = None
-        self.btn_load = None
-        self._setup_ui()
-        if self.memories: self.load_chunk()
-
-    def _calculate_stats(self):
+        
         self.total_count = len(self.memories)
-        self.video_count = 0
-        self.photo_count = 0
-        for mem in self.memories:
-            path = mem.get('path', '')
-            if not path: continue
-            ext = os.path.splitext(path)[1].lower()
-            if ext in ['.mp4', '.mov']: self.video_count += 1
-            elif ext in ['.jpg', '.jpeg', '.png']: self.photo_count += 1
+        self.video_count = sum(1 for m in self.memories if m.get('path') and os.path.splitext(m['path'])[1].lower() in ['.mp4','.mov'])
+        self.photo_count = self.total_count - self.video_count
+        
+        self.total_pages = math.ceil(self.total_count / self.PAGE_SIZE) if self.total_count > 0 else 1
+        
+        self._setup_ui()
+        self.after(50, lambda: self.load_page(1))
+
+    def destroy(self):
+        self.executor.shutdown(wait=False)
+        super().destroy()
 
     def _setup_ui(self):
-        filter_frame = ctk.CTkFrame(self, fg_color=BG_SIDEBAR, height=45, corner_radius=0)
-        filter_frame.pack(fill="x")
+        top_bar = ctk.CTkFrame(self, fg_color=BG_SIDEBAR, height=50, corner_radius=0)
+        top_bar.pack(fill="x")
         
-        ctk.CTkLabel(filter_frame, text="Sort:", text_color=TEXT_DIM).pack(side="left", padx=(15, 5))
+        ctk.CTkLabel(top_bar, text="Sort:", text_color=TEXT_DIM).pack(side="left", padx=(15, 5))
         self.sort_var = ctk.StringVar(value="Newest > Oldest")
-        sort_menu = ctk.CTkOptionMenu(filter_frame, values=["Newest > Oldest", "Oldest > Newest"], 
-                                      variable=self.sort_var, width=140, fg_color=BG_CARD, button_color=BG_HOVER,
-                                      command=self.on_sort_changed)
-        sort_menu.pack(side="left", padx=5)
+        ctk.CTkOptionMenu(top_bar, values=["Newest > Oldest", "Oldest > Newest"], 
+                          variable=self.sort_var, width=140, fg_color=BG_CARD, button_color=BG_HOVER,
+                          command=self.on_sort_changed).pack(side="left", padx=5)
         
-        stats_frame = ctk.CTkFrame(filter_frame, fg_color="transparent")
-        stats_frame.pack(side="right", padx=20)
+        self._add_stat(top_bar, f"{self.total_count}", TEXT_MAIN)
+        self._add_stat(top_bar, f"{self.photo_count}", SNAP_BLUE, "camera")
+        self._add_stat(top_bar, f"{self.video_count}", SNAP_RED, "video")
+
+        self.nav_frame = ctk.CTkFrame(top_bar, fg_color="transparent")
+        self.nav_frame.pack(side="right", padx=10)
         
-        # UPDATED: Pass Icon names
-        self._add_stat(stats_frame, f"Total: {self.total_count}", TEXT_MAIN, None)
-        self._add_stat(stats_frame, f"{self.photo_count}", SNAP_BLUE, "camera")
-        self._add_stat(stats_frame, f"{self.video_count}", SNAP_RED, "video")
+        self.btn_prev = ctk.CTkButton(self.nav_frame, text="<", width=30, command=self.prev_page, fg_color=BG_CARD, hover_color=BG_HOVER)
+        self.btn_prev.pack(side="left", padx=2)
+        
+        self.page_entry = ctk.CTkEntry(self.nav_frame, width=40, font=("Segoe UI", 12), justify="center", fg_color=BG_SIDEBAR, border_width=0)
+        self.page_entry.pack(side="left", padx=(5, 0))
+        self.page_entry.bind("<Return>", self.jump_to_page)
+        self.page_entry.bind("<FocusIn>", self._on_entry_focus_in)
+        self.page_entry.bind("<FocusOut>", self._on_entry_focus_out)
+        
+        self.lbl_total = ctk.CTkLabel(self.nav_frame, text=f"/ {self.total_pages}", width=40, font=("Segoe UI", 12))
+        self.lbl_total.pack(side="left", padx=(0, 5))
+        
+        self.btn_next = ctk.CTkButton(self.nav_frame, text=">", width=30, command=self.next_page, fg_color=BG_CARD, hover_color=BG_HOVER)
+        self.btn_next.pack(side="left", padx=2)
 
         self.scroll_mems = ctk.CTkScrollableFrame(self, fg_color="transparent", 
                                                   scrollbar_button_color=SNAP_RED, 
                                                   scrollbar_button_hover_color="#c92248")
         self.scroll_mems.pack(fill="both", expand=True)
-        self.scroll_mems.grid_columnconfigure(0, weight=1)
         self.scroll_mems.bind("<Configure>", self.on_resize)
+
+        bottom_bar = ctk.CTkFrame(self, fg_color="transparent", height=40)
+        bottom_bar.pack(fill="x", pady=10)
         
-        self.btn_load = ctk.CTkButton(self.scroll_mems, text="Load More", width=200, height=40,
-                                      command=self.load_chunk, fg_color=BG_CARD, hover_color=BG_HOVER, text_color=TEXT_MAIN)
+        self.btn_prev_b = ctk.CTkButton(bottom_bar, text="< Previous Page", width=120, command=self.prev_page, fg_color=BG_SIDEBAR, hover_color=BG_HOVER)
+        self.btn_prev_b.pack(side="left", padx=20)
+        
+        self.btn_next_b = ctk.CTkButton(bottom_bar, text="Next Page >", width=120, command=self.next_page, fg_color=SNAP_BLUE, hover_color="#007ACC", text_color="white")
+        self.btn_next_b.pack(side="right", padx=20)
+
+    def _on_entry_focus_in(self, event):
+        self.page_entry.configure(fg_color=BG_MAIN, border_width=1)
+
+    def _on_entry_focus_out(self, event):
+        self.page_entry.configure(fg_color=BG_SIDEBAR, border_width=0)
+        if self.page_entry.get() != str(self.current_page):
+            self.page_entry.delete(0, "end")
+            self.page_entry.insert(0, str(self.current_page))
 
     def _add_stat(self, parent, text, color, icon_name=None):
         f = ctk.CTkFrame(parent, fg_color="transparent")
         f.pack(side="left", padx=8)
-        
-        # Add Icon if provided
         if icon_name:
             icon = assets.load_icon(icon_name, size=(16, 16))
-            if icon:
-                ctk.CTkLabel(f, text="", image=icon).pack(side="left", padx=(0, 5))
-            
+            if icon: ctk.CTkLabel(f, text="", image=icon).pack(side="left", padx=(0, 5))
         ctk.CTkLabel(f, text=text, font=("Segoe UI", 12, "bold"), text_color=color).pack(side="left")
 
-    # --- CAROUSEL LOGIC ---
     def open_media(self, path):
-        # 1. Build Playlist (Only items with valid paths)
         playlist = [m['path'] for m in self.memories if m.get('path')]
-        
-        # 2. Find Index
-        try:
-            idx = playlist.index(path)
-        except ValueError:
-            idx = 0
-            playlist = [path]
-            
-        # 3. Launch
+        try: idx = playlist.index(path)
+        except: idx = 0; playlist = [path]
         GlobalMediaPlayer(self, playlist, idx)
 
     def on_sort_changed(self, choice):
         reverse = (choice == "Newest > Oldest")
         self.memories.sort(key=lambda x: x['date'], reverse=reverse)
-        for item in self.grid_items: item['widget'].destroy()
-        self.grid_items = []
-        if self.btn_load: self.btn_load.grid_forget()
-        self.page = 0
+        self.load_page(1)
+
+    def prev_page(self):
+        if self.current_page > 1: self.load_page(self.current_page - 1)
+
+    def next_page(self):
+        if self.current_page < self.total_pages: self.load_page(self.current_page + 1)
+
+    def jump_to_page(self, event=None):
+        self.focus()
+        try:
+            target = int(self.page_entry.get())
+            if 1 <= target <= self.total_pages: self.load_page(target)
+            else: self._reset_input()
+        except ValueError: self._reset_input()
+
+    def _reset_input(self):
+        self.page_entry.delete(0, "end")
+        self.page_entry.insert(0, str(self.current_page))
+
+    def on_resize(self, event):
+        if abs(event.width - self.last_width) > 30:
+            self.last_width = event.width
+            self.render_current_page_items()
+
+    def load_page(self, page_num):
+        self.current_page = page_num
+        self._reset_input()
+        self.lbl_total.configure(text=f"/ {self.total_pages}")
+        
+        state_prev = "normal" if page_num > 1 else "disabled"
+        state_next = "normal" if page_num < self.total_pages else "disabled"
+        
+        self.btn_prev.configure(state=state_prev)
+        self.btn_next.configure(state=state_next)
+        self.btn_prev_b.configure(state=state_prev)
+        self.btn_next_b.configure(state=state_next)
+
+        self.render_current_page_items()
         self.scroll_mems._parent_canvas.yview_moveto(0.0)
-        self.load_chunk()
 
-    def load_chunk(self):
-        self.btn_load.grid_forget()
-        self.update_idletasks()
-        start = self.page * 50
-        end = start + 50
+    def render_current_page_items(self):
+        # 1. Clear Scroll Frame
+        for w in self.scroll_mems.winfo_children(): w.destroy()
+            
+        # 2. Get Data
+        start = (self.current_page - 1) * self.PAGE_SIZE
+        end = start + self.PAGE_SIZE
         chunk = self.memories[start:end]
-        w = self.scroll_mems.winfo_width()
-        if w < 100: w = 1000 
-        cols = max(1, w // 204)
-        card_width = int((w - (cols * 4)) / cols)
+        if not chunk: return
 
+        # 3. Calculate Layout
+        w = self.scroll_mems.winfo_width()
+        if w < 100: w = 1000
+        
+        cols = max(1, w // 204)
+        card_width = int((w - (cols * 4)) / cols) 
+
+        # 4. Build Rows (PACK STRATEGY)
+        current_row_frame = None
+        current_row_count = 0
+        last_month_key = None
+        
         for mem in chunk:
             try:
                 dt = datetime.strptime(mem['date'], "%Y-%m-%d %H:%M:%S UTC")
@@ -187,58 +271,25 @@ class MemoriesView(ctk.CTkFrame):
             except:
                 dt = None
                 month_key = "Unknown"
-                display_text = "UNKNOWN DATE"
+                display_text = "UNKNOWN"
 
-            last_month = None
-            if self.grid_items:
-                last_item = self.grid_items[-1]
-                if last_item['type'] == 'card' and last_item['date_obj']:
-                    last_month = last_item['date_obj'].strftime("%Y-%m")
-            
-            if month_key != last_month:
+            if month_key != last_month_key:
+                current_row_frame = None 
+                current_row_count = 0
                 header = MonthHeader(self.scroll_mems, display_text)
-                self.grid_items.append({'type': 'header', 'widget': header, 'date_obj': dt})
+                header.pack(fill="x", pady=(10, 0))
+                last_month_key = month_key
 
-            # Pass self.open_media as callback
-            card = MemoryCard(self.scroll_mems, mem, card_width, click_callback=self.open_media)
-            self.grid_items.append({'type': 'card', 'widget': card, 'date_obj': dt})
-        
-        self.page += 1
-        self.reorganize()
-        self.update_idletasks()
+            if current_row_frame is None or current_row_count >= cols:
+                current_row_frame = RowFrame(self.scroll_mems)
+                current_row_frame.pack(fill="x", pady=2)
+                current_row_count = 0
+            
+            card = MemoryCard(current_row_frame, mem, card_width, self.open_media, self.executor)
+            card.pack(side="left", padx=2) 
+            current_row_count += 1
 
-    def reorganize(self):
-        w = self.scroll_mems.winfo_width()
-        if w < 100: return
-        PAD = 2
-        cols = max(1, w // 204)
-        card_width = int((w - (cols * (PAD*2))) / cols)
-        current_row = 0
-        current_col = 0
-        
-        for item in self.grid_items:
-            widget = item['widget']
-            if item['type'] == 'header':
-                if current_col > 0:
-                    current_row += 1
-                    current_col = 0
-                widget.grid(row=current_row, column=0, columnspan=cols, sticky="ew", padx=0, pady=(10, 0))
-                current_row += 1
-            else:
-                if hasattr(widget, 'configure'):
-                    widget.configure(width=card_width)
-                    if hasattr(widget, 'current_width'): widget.current_width = card_width
-                widget.grid(row=current_row, column=current_col, padx=PAD, pady=PAD, sticky="n")
-                current_col += 1
-                if current_col >= cols:
-                    current_col = 0
-                    current_row += 1
-        if len(self.memories) > len(self.grid_items):
-            if current_col > 0: current_row += 1
-            self.btn_load.grid(row=current_row, column=0, columnspan=cols, pady=20)
-            self.btn_load.lift()
-
-    def on_resize(self, event):
-        if abs(event.width - self.last_width) > 30:
-            self.last_width = event.width
-            self.reorganize()
+        # 5. Add Bottom Padding
+        ctk.CTkLabel(self.scroll_mems, text="", height=50).pack(pady=20)
+        # FORCE UPDATE
+        self.scroll_mems.update_idletasks()
