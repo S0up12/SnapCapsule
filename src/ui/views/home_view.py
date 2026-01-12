@@ -36,7 +36,12 @@ class HomeView(ctk.CTkFrame):
         if logo_img:
             ctk.CTkLabel(self.card, text="", image=logo_img).pack(pady=(20, 0))
         else:
-            ctk.CTkLabel(self.card, text="👻", font=("Segoe UI", 50)).pack(pady=(20, 0))
+            # Fallback to Ghost icon if snapcapsule.svg missing
+            icon_ghost = assets.load_icon("ghost", size=(60,60)) 
+            if icon_ghost:
+                ctk.CTkLabel(self.card, text="", image=icon_ghost).pack(pady=(20, 0))
+            else:
+                ctk.CTkLabel(self.card, text="👻", font=("Segoe UI", 50)).pack(pady=(20, 0))
             
         ctk.CTkLabel(self.card, text="SnapCapsule", font=("Segoe UI", 28, "bold"), text_color=TEXT_MAIN).pack(pady=(0, 5))
         ctk.CTkLabel(self.card, text="Your digital time capsule, purely local.", font=("Segoe UI", 14), text_color=TEXT_DIM).pack(pady=(0, 20))
@@ -87,7 +92,6 @@ class HomeView(ctk.CTkFrame):
         scroll = ctk.CTkScrollableFrame(card, fg_color="transparent")
         scroll.pack(fill="both", expand=True, padx=5, pady=20)
         
-        # USE ASSETS TO FIND FILE IN .EXE
         path = assets.get_resource_path("tutorial.md")
         self._render_markdown(scroll, path)
 
@@ -98,6 +102,8 @@ class HomeView(ctk.CTkFrame):
 
         with open(filename, "r", encoding="utf-8") as f:
             lines = f.readlines()
+
+        icon_link = assets.load_icon("link", size=(16, 16))
 
         for line in lines:
             line = line.strip()
@@ -116,7 +122,8 @@ class HomeView(ctk.CTkFrame):
                     end_idx = line.index("]")
                     url = line[8:end_idx]
                     label_text = line[end_idx+1:].strip()
-                    ctk.CTkButton(parent, text=f"🔗 {label_text}", height=30, fg_color=BG_CARD, hover_color=BG_HOVER, text_color=SNAP_BLUE,
+                    ctk.CTkButton(parent, text=f" {label_text}", image=icon_link, compound="left", 
+                                  height=30, fg_color=BG_CARD, hover_color=BG_HOVER, text_color=SNAP_BLUE,
                                   command=lambda u=url: webbrowser.open(u)).pack(anchor="w", padx=20, pady=5)
                 except: pass
             else:
@@ -189,29 +196,38 @@ class HomeView(ctk.CTkFrame):
 
         btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
         btn_frame.pack(fill="x", padx=20, pady=10)
-        ctk.CTkButton(btn_frame, text="✨ Choose for Me", command=use_default, fg_color=SNAP_BLUE, height=40).pack(fill="x", pady=5)
-        ctk.CTkButton(btn_frame, text="📂 Select Folder...", command=browse_custom, fg_color=BG_CARD, hover_color=BG_HOVER, height=40).pack(fill="x", pady=5)
+        
+        # ICONS REPLACED HERE
+        icon_star = assets.load_icon("shuffle", size=(16, 16)) # "Choose for me" often implies shuffling or magic
+        icon_folder = assets.load_icon("folder", size=(16, 16))
+        
+        ctk.CTkButton(btn_frame, text=" Choose for Me", image=icon_star, compound="left", command=use_default, fg_color=SNAP_BLUE, height=40).pack(fill="x", pady=5)
+        ctk.CTkButton(btn_frame, text=" Select Folder...", image=icon_folder, compound="left", command=browse_custom, fg_color=BG_CARD, hover_color=BG_HOVER, height=40).pack(fill="x", pady=5)
 
     def start_dl(self):
         root = self.entry_root.get()
         dest = self.entry_dest.get()
         
         if not root or not os.path.exists(root):
-             self.lbl_status.configure(text="❌ Invalid Data Source Folder")
+             self.lbl_status.configure(text="Invalid Data Source Folder")
              return
 
         json_p = os.path.join(root, "json", "memories_history.json")
         if not os.path.exists(json_p):
-             self.lbl_status.configure(text="❌ memories_history.json not found")
+             self.lbl_status.configure(text="memories_history.json not found")
              return
 
         self.downloader = MemoryDownloader(self.update_status, self.update_progress)
         self.is_downloading = True
-        self.btn_dl.configure(text=" ⛔ Cancel Download", fg_color="#550000", hover_color="#770000")
+        
+        # Icon for Cancel
+        icon_x = assets.load_icon("x", size=(16, 16))
+        self.btn_dl.configure(text=" Cancel Download", image=icon_x, fg_color="#550000", hover_color="#770000")
         
         threading.Thread(target=self.downloader.download_memories, args=(json_p, dest), daemon=True).start()
 
     def update_status(self, text):
+        # NOTE: Downloader sends text with emojis. We allow this for status messages as they are text strings.
         self.lbl_status.configure(text=text)
 
     def update_progress(self, val):
