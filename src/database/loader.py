@@ -6,7 +6,8 @@ class DataManager:
     def __init__(self, config_manager):
         self.cfg = config_manager
         self.media_map = {} 
-        self.chats = {}
+        self.raw_chats = {} # Holds the raw JSON dict
+        self.chat_index = [] # List of friend names for the sidebar
         self.memories = []
         self.profile = {} 
         
@@ -16,26 +17,35 @@ class DataManager:
 
     def reload(self):
         self.media_map = {}
-        self.chats = {}
+        self.raw_chats = {}
+        self.chat_index = []
         self.memories = []
         self.profile = {}
         
         self.root = self.cfg.get("data_root")
         
         if not self.root or not os.path.exists(self.root):
-            return {}, [], {}
+            return [], [], {}
 
         self.json_path = os.path.join(self.root, "json", "chat_history.json")
         self.chat_media_path = os.path.join(self.root, "chat_media")
         
+        # 1. Index Media (Fast)
         if os.path.exists(self.chat_media_path):
             print(f"⏳ Indexing Chat Media...")
             self._index_media(self.chat_media_path)
         
+        # 2. Load Raw JSON (Fast I/O) - Do NOT process messages yet
         if os.path.exists(self.json_path):
-            print("⏳ Parsing Chats...")
-            self._parse_chats()
+            print("⏳ Loading Chat JSON...")
+            try:
+                with open(self.json_path, "r", encoding="utf-8") as f:
+                    self.raw_chats = json.load(f)
+                self.chat_index = sorted(list(self.raw_chats.keys()))
+            except Exception as e:
+                print(f"❌ JSON Load Error: {e}")
         
+        # 3. Memories & Profile
         print("⏳ Parsing Memories...")
         self._parse_memories_list()
 
@@ -46,50 +56,82 @@ class DataManager:
         if mem_path and os.path.exists(mem_path):
              self._link_memories(mem_path)
 
-        return self.chats, self.memories, self.profile
+        return self.chat_index, self.memories, self.profile
+
+    def get_chat_messages(self, friend_name):
+        """Lazy loads and processes messages for a specific friend."""
+        if friend_name not in self.raw_chats:
+            return []
+            
+        raw_msgs = self.raw_chats[friend_name]
+        clean_msgs = []
+        
+        for msg in raw_msgs:
+            txt = msg.get("Content") or ""
+            media_ids = msg.get("Media IDs", "")
+            files = []
+            
+            # Media Linking
+            if media_ids:
+                # Handle both list and string formats just in case
+                if isinstance(media_ids, list): ids = media_ids
+                else: ids = str(media_ids).split(" | ")
+                
+                for mid in ids:
+                    if mid in self.media_map: 
+                        files.append(self.media_map[mid])
+
+            # Date Formatting
+            date_str = msg.get("Created", "")
+            nice_date = date_str
+            try:
+                # Snapchat usually uses UTC "2023-01-01 12:00:00 UTC"
+                if "UTC" in date_str:
+                    dt = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S UTC")
+                    nice_date = dt.strftime("%Y-%m-%d %H:%M")
+                else:
+                    # Fallback for ISO format
+                    dt = datetime.fromisoformat(date_str)
+                    nice_date = dt.strftime("%Y-%m-%d %H:%M")
+            except: 
+                pass
+
+            clean_msgs.append({
+                "sender": msg.get("From", "Unknown"), 
+                "date": nice_date, 
+                "text": txt, 
+                "media": files
+            })
+            
+        return clean_msgs[::-1] # Newest at bottom
 
     def _index_media(self, folder_path):
         if not os.path.exists(folder_path): return
-        for filename in os.listdir(folder_path):
-            try:
-                self.media_map[filename] = os.path.join(folder_path, filename)
-                if "_" in filename:
-                     parts = filename.split("_", 1)
-                     if len(parts) > 1:
-                         media_id = os.path.splitext(parts[1])[0]
-                         self.media_map[media_id] = os.path.join(folder_path, filename)
-            except: continue
-
-    def _parse_chats(self):
-        if not os.path.exists(self.json_path): return
-        with open(self.json_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
-        for friend, messages in data.items():
-            clean_msgs = []
-            for msg in messages:
-                txt = msg.get("Content") or ""
-                media_ids = msg.get("Media IDs", "")
-                files = []
-                if media_ids:
-                    for mid in media_ids.split(" | "):
-                        if mid in self.media_map: files.append(self.media_map[mid])
-
-                date_str = msg.get("Created", "")
-                try:
-                    dt = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S UTC")
-                    nice_date = dt.strftime("%Y-%m-%d %H:%M")
-                except: nice_date = date_str
-
-                clean_msgs.append({"sender": msg.get("From", "Unknown"), "date": nice_date, "text": txt, "media": files})
-            self.chats[friend] = clean_msgs[::-1]
+        # Using scandir is faster than listdir for large folders
+        with os.scandir(folder_path) as it:
+            for entry in it:
+                if entry.is_file():
+                    filename = entry.name
+                    # Map full filename
+                    self.media_map[filename] = entry.path
+                    # Map ID (stripping date prefix if exists: "2023-01-01_MEDIA-ID.jpg")
+                    if "_" in filename:
+                        try:
+                            parts = filename.split("_", 1)
+                            if len(parts) > 1:
+                                media_id = os.path.splitext(parts[1])[0]
+                                self.media_map[media_id] = entry.path
+                        except: continue
 
     def _parse_memories_list(self):
         mem_json = os.path.join(self.root, "json", "memories_history.json")
         if not os.path.exists(mem_json): return
         
-        with open(mem_json, "r", encoding="utf-8") as f:
-            raw_list = json.load(f).get("Saved Media", [])
+        try:
+            with open(mem_json, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                raw_list = data.get("Saved Media", [])
+        except: return
 
         self.memories = []
         for item in raw_list:
@@ -102,61 +144,80 @@ class DataManager:
 
     def _link_memories(self, folder_path):
         if not os.path.exists(folder_path): return
-        mem_index = {f: os.path.join(folder_path, f) for f in os.listdir(folder_path)}
+        
+        # Optimization: Pre-index files by their date-prefix for O(1) lookup
+        # Filename format expected: "YYYY-MM-DD_HH-MM-SS.ext"
+        file_index = {}
+        with os.scandir(folder_path) as it:
+            for entry in it:
+                if entry.is_file():
+                    # Key is the timestamp part "2023-01-01_12-00-00"
+                    key = os.path.splitext(entry.name)[0] 
+                    file_index[key] = entry.path
+
         for mem in self.memories:
             try:
-                dt = datetime.strptime(mem['date'], "%Y-%m-%d %H:%M:%S UTC")
-                prefix = dt.strftime("%Y-%m-%d_%H-%M-%S")
-                for fname in mem_index:
-                    if fname.startswith(prefix):
-                        mem['path'] = mem_index[fname]
-                        break
+                # Convert API date "2023-01-01 12:00:00 UTC" to filename format "2023-01-01_12-00-00"
+                date_str = mem['date']
+                if "UTC" in date_str:
+                    dt = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S UTC")
+                    prefix = dt.strftime("%Y-%m-%d_%H-%M-%S")
+                    
+                    if prefix in file_index:
+                        mem['path'] = file_index[prefix]
             except: pass
 
     def _parse_profile_data(self):
         json_dir = os.path.join(self.root, "json")
         
+        def load_safe(filename, key):
+            p = os.path.join(json_dir, filename)
+            if os.path.exists(p):
+                try:
+                    with open(p, "r", encoding="utf-8") as f:
+                        return json.load(f).get(key, [])
+                except: return []
+            return []
+
         # 1. Basic Account Info
         acc_path = os.path.join(json_dir, "account.json")
         if os.path.exists(acc_path):
-            with open(acc_path, "r", encoding="utf-8") as f:
-                acc = json.load(f)
-                self.profile['basic'] = acc.get("Basic Information", {})
-                self.profile['device_history'] = acc.get("Device History", [])
+            try:
+                with open(acc_path, "r", encoding="utf-8") as f:
+                    acc = json.load(f)
+                    self.profile['basic'] = acc.get("Basic Information", {})
+                    self.profile['device_history'] = acc.get("Device History", [])
+            except: pass
 
         # 2. Account History
-        hist_path = os.path.join(json_dir, "account_history.json")
-        if os.path.exists(hist_path):
-            with open(hist_path, "r", encoding="utf-8") as f:
-                hist = json.load(f)
-                self.profile['name_history'] = hist.get("Display Name Change", [])
+        self.profile['name_history'] = load_safe("account_history.json", "Display Name Change")
 
-        # 3. Friends Stats (UPDATED)
+        # 3. Friends Stats
         friends_path = os.path.join(json_dir, "friends.json")
         if os.path.exists(friends_path):
-            with open(friends_path, "r", encoding="utf-8") as f:
-                fr = json.load(f)
-                
-                # STORE THE LIST
-                self.profile['friends_list'] = fr.get("Friends", [])
-                
-                self.profile['stats'] = {
-                    "friends": len(self.profile['friends_list']),
-                    "deleted": len(fr.get("Deleted Friends", [])),
-                    "blocked": len(fr.get("Blocked Users", []))
-                }
+            try:
+                with open(friends_path, "r", encoding="utf-8") as f:
+                    fr = json.load(f)
+                    self.profile['friends_list'] = fr.get("Friends", [])
+                    self.profile['stats'] = {
+                        "friends": len(self.profile['friends_list']),
+                        "deleted": len(fr.get("Deleted Friends", [])),
+                        "blocked": len(fr.get("Blocked Users", []))
+                    }
+            except: pass
 
         # 4. Engagement
         user_prof_path = os.path.join(json_dir, "user_profile.json")
         if os.path.exists(user_prof_path):
-            with open(user_prof_path, "r", encoding="utf-8") as f:
-                eng = json.load(f).get("Engagement", [])
-                eng_dict = {item["Event"]: item["Occurrences"] for item in eng}
-                self.profile['engagement'] = eng_dict
+            try:
+                with open(user_prof_path, "r", encoding="utf-8") as f:
+                    eng = json.load(f).get("Engagement", [])
+                    # Handle both list of dicts and simple dict structure variations
+                    if isinstance(eng, list):
+                        self.profile['engagement'] = {item["Event"]: item["Occurrences"] for item in eng if "Event" in item}
+                    else:
+                        self.profile['engagement'] = {}
+            except: pass
 
         # 5. Travel
-        places_path = os.path.join(json_dir, "snap_map_places_history.json")
-        if os.path.exists(places_path):
-            with open(places_path, "r", encoding="utf-8") as f:
-                places = json.load(f).get("Snap Map Places History", [])
-                self.profile['places'] = places[:50]
+        self.profile['places'] = load_safe("snap_map_places_history.json", "Snap Map Places History")[:100]
