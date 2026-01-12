@@ -1,0 +1,47 @@
+# --- Python Basics ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+.env
+
+# --- VS Code / Editor settings ---
+.vscode/
+.idea/
+
+# --- Personal Data (CRITICAL) ---
+# Ignore the data folder and local config
+mydata*/
+data/
+config.json
+cache/
+
+# --- Media Files (Safety net) ---
+*.mp4
+*.jpg
+*.png
+*.zip
+*.mov
+*.wav
+*.mp3
+
+# --- OS generated files ---
+.DS_Store
+Thumbs.db
+
+# --- Asset Exceptions ---
+# We ignore media files above, but we MUST keep our app icons
+!src/assets/
+
+# --- Build Artifacts (PyInstaller) ---
+# These are generated when you run build_app.py
+build/
+dist/
+*.spec
+
+## --- Logs ---
+*.log
