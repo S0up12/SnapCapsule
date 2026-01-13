@@ -18,7 +18,8 @@ class MemoryCard(ctk.CTkFrame):
         self.executor = executor
         self.is_loaded = False
         
-        self.btn = ctk.CTkButton(self, text="", fg_color="#1a1a1a", hover_color="#252525",
+        # Use theme-aware BG_CARD
+        self.btn = ctk.CTkButton(self, text="", fg_color=BG_CARD, hover_color=BG_HOVER,
                                  corner_radius=6, command=lambda: self.click_callback(self.path))
         self.btn.pack(expand=True, fill="both", padx=2, pady=2)
         
@@ -31,16 +32,16 @@ class MemoryCard(ctk.CTkFrame):
         if is_loading:
             icon_name = "image"
             text = ""
-            color = "#1a1a1a"
+            color = BG_CARD
         else:
             icon_name = "alert-triangle" if is_missing else "file-text"
             text = "Missing" if is_missing else "No Preview"
-            color = "#2b1111" if is_missing else "#1a1a1a"
+            color = ("#FADBD8", "#2b1111") if is_missing else BG_CARD
             
         icon = assets.load_icon(icon_name, size=(32, 32))
         
         self.btn.configure(image=icon, text=text, compound="top", 
-                           fg_color=color, font=("Segoe UI", 12, "bold"), text_color="#666")
+                           fg_color=color, font=("Segoe UI", 12, "bold"), text_color=TEXT_DIM)
         self.btn.image = icon
 
     def load_image(self):
@@ -89,7 +90,6 @@ class MemoryCard(ctk.CTkFrame):
             self._set_placeholder_state(is_missing=False)
 
 class RowFrame(ctk.CTkFrame):
-    """Simple container for a row of cards."""
     def __init__(self, parent):
         super().__init__(parent, fg_color="transparent", height=200)
         self.pack_propagate(False)
@@ -109,7 +109,6 @@ class MemoriesView(ctk.CTkFrame):
         
         self.PAGE_SIZE = 50
         self.current_page = 1
-        self.total_pages = 1
         
         self.executor = ThreadPoolExecutor(max_workers=4)
         self.last_width = 0
@@ -128,35 +127,37 @@ class MemoriesView(ctk.CTkFrame):
         super().destroy()
 
     def _setup_ui(self):
-        top_bar = ctk.CTkFrame(self, fg_color=BG_SIDEBAR, height=50, corner_radius=0)
+        top_bar = ctk.CTkFrame(self, fg_color=BG_SIDEBAR, height=60, corner_radius=0)
         top_bar.pack(fill="x")
         
         ctk.CTkLabel(top_bar, text="Sort:", text_color=TEXT_DIM).pack(side="left", padx=(15, 5))
         self.sort_var = ctk.StringVar(value="Newest > Oldest")
         ctk.CTkOptionMenu(top_bar, values=["Newest > Oldest", "Oldest > Newest"], 
-                          variable=self.sort_var, width=140, fg_color=BG_CARD, button_color=BG_HOVER,
+                          variable=self.sort_var, width=140, 
+                          fg_color=BG_CARD, button_color=BG_HOVER, text_color=TEXT_MAIN,
                           command=self.on_sort_changed).pack(side="left", padx=5)
         
         self._add_stat(top_bar, f"{self.total_count}", TEXT_MAIN)
         self._add_stat(top_bar, f"{self.photo_count}", SNAP_BLUE, "camera")
         self._add_stat(top_bar, f"{self.video_count}", SNAP_RED, "video")
 
+        # Top Right Pagination Container
         self.nav_frame = ctk.CTkFrame(top_bar, fg_color="transparent")
-        self.nav_frame.pack(side="right", padx=10)
+        self.nav_frame.pack(side="right", padx=15)
         
-        self.btn_prev = ctk.CTkButton(self.nav_frame, text="<", width=30, command=self.prev_page, fg_color=BG_CARD, hover_color=BG_HOVER)
+        icon_prev = assets.load_icon("chevron-left", size=(20, 20))
+        icon_next = assets.load_icon("chevron-right", size=(20, 20))
+
+        self.btn_prev = ctk.CTkButton(self.nav_frame, text="", image=icon_prev, width=35, height=35, 
+                                      command=self.prev_page, fg_color=SNAP_BLUE, hover_color="#007ACC")
         self.btn_prev.pack(side="left", padx=2)
         
-        self.page_entry = ctk.CTkEntry(self.nav_frame, width=40, font=("Segoe UI", 12), justify="center", fg_color=BG_SIDEBAR, border_width=0)
-        self.page_entry.pack(side="left", padx=(5, 0))
-        self.page_entry.bind("<Return>", self.jump_to_page)
-        self.page_entry.bind("<FocusIn>", self._on_entry_focus_in)
-        self.page_entry.bind("<FocusOut>", self._on_entry_focus_out)
+        self.lbl_page = ctk.CTkLabel(self.nav_frame, text=f"Page {self.current_page} / {self.total_pages}", 
+                                     font=("Segoe UI", 12, "bold"), text_color=TEXT_MAIN)
+        self.lbl_page.pack(side="left", padx=10)
         
-        self.lbl_total = ctk.CTkLabel(self.nav_frame, text=f"/ {self.total_pages}", width=40, font=("Segoe UI", 12))
-        self.lbl_total.pack(side="left", padx=(0, 5))
-        
-        self.btn_next = ctk.CTkButton(self.nav_frame, text=">", width=30, command=self.next_page, fg_color=BG_CARD, hover_color=BG_HOVER)
+        self.btn_next = ctk.CTkButton(self.nav_frame, text="", image=icon_next, width=35, height=35, 
+                                      command=self.next_page, fg_color=SNAP_BLUE, hover_color="#007ACC")
         self.btn_next.pack(side="left", padx=2)
 
         self.scroll_mems = ctk.CTkScrollableFrame(self, fg_color="transparent", 
@@ -164,24 +165,6 @@ class MemoriesView(ctk.CTkFrame):
                                                   scrollbar_button_hover_color="#c92248")
         self.scroll_mems.pack(fill="both", expand=True)
         self.scroll_mems.bind("<Configure>", self.on_resize)
-
-        bottom_bar = ctk.CTkFrame(self, fg_color="transparent", height=40)
-        bottom_bar.pack(fill="x", pady=10)
-        
-        self.btn_prev_b = ctk.CTkButton(bottom_bar, text="< Previous Page", width=120, command=self.prev_page, fg_color=BG_SIDEBAR, hover_color=BG_HOVER)
-        self.btn_prev_b.pack(side="left", padx=20)
-        
-        self.btn_next_b = ctk.CTkButton(bottom_bar, text="Next Page >", width=120, command=self.next_page, fg_color=SNAP_BLUE, hover_color="#007ACC", text_color="white")
-        self.btn_next_b.pack(side="right", padx=20)
-
-    def _on_entry_focus_in(self, event):
-        self.page_entry.configure(fg_color=BG_MAIN, border_width=1)
-
-    def _on_entry_focus_out(self, event):
-        self.page_entry.configure(fg_color=BG_SIDEBAR, border_width=0)
-        if self.page_entry.get() != str(self.current_page):
-            self.page_entry.delete(0, "end")
-            self.page_entry.insert(0, str(self.current_page))
 
     def _add_stat(self, parent, text, color, icon_name=None):
         f = ctk.CTkFrame(parent, fg_color="transparent")
@@ -208,18 +191,6 @@ class MemoriesView(ctk.CTkFrame):
     def next_page(self):
         if self.current_page < self.total_pages: self.load_page(self.current_page + 1)
 
-    def jump_to_page(self, event=None):
-        self.focus()
-        try:
-            target = int(self.page_entry.get())
-            if 1 <= target <= self.total_pages: self.load_page(target)
-            else: self._reset_input()
-        except ValueError: self._reset_input()
-
-    def _reset_input(self):
-        self.page_entry.delete(0, "end")
-        self.page_entry.insert(0, str(self.current_page))
-
     def on_resize(self, event):
         if abs(event.width - self.last_width) > 30:
             self.last_width = event.width
@@ -227,38 +198,31 @@ class MemoriesView(ctk.CTkFrame):
 
     def load_page(self, page_num):
         self.current_page = page_num
-        self._reset_input()
-        self.lbl_total.configure(text=f"/ {self.total_pages}")
+        self.lbl_page.configure(text=f"Page {self.current_page} / {self.total_pages}")
         
         state_prev = "normal" if page_num > 1 else "disabled"
         state_next = "normal" if page_num < self.total_pages else "disabled"
         
         self.btn_prev.configure(state=state_prev)
         self.btn_next.configure(state=state_next)
-        self.btn_prev_b.configure(state=state_prev)
-        self.btn_next_b.configure(state=state_next)
 
         self.render_current_page_items()
         self.scroll_mems._parent_canvas.yview_moveto(0.0)
 
     def render_current_page_items(self):
-        # 1. Clear Scroll Frame
         for w in self.scroll_mems.winfo_children(): w.destroy()
             
-        # 2. Get Data
         start = (self.current_page - 1) * self.PAGE_SIZE
         end = start + self.PAGE_SIZE
         chunk = self.memories[start:end]
         if not chunk: return
 
-        # 3. Calculate Layout
         w = self.scroll_mems.winfo_width()
         if w < 100: w = 1000
         
         cols = max(1, w // 204)
         card_width = int((w - (cols * 4)) / cols) 
 
-        # 4. Build Rows (PACK STRATEGY)
         current_row_frame = None
         current_row_count = 0
         last_month_key = None
@@ -289,7 +253,5 @@ class MemoriesView(ctk.CTkFrame):
             card.pack(side="left", padx=2) 
             current_row_count += 1
 
-        # 5. Add Bottom Padding
         ctk.CTkLabel(self.scroll_mems, text="", height=50).pack(pady=20)
-        # FORCE UPDATE
         self.scroll_mems.update_idletasks()

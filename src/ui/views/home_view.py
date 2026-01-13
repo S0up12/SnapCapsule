@@ -36,7 +36,6 @@ class HomeView(ctk.CTkFrame):
         if logo_img:
             ctk.CTkLabel(self.card, text="", image=logo_img).pack(pady=(20, 0))
         else:
-            # Fallback to Ghost icon if snapcapsule.svg missing
             icon_ghost = assets.load_icon("ghost", size=(60,60)) 
             if icon_ghost:
                 ctk.CTkLabel(self.card, text="", image=icon_ghost).pack(pady=(20, 0))
@@ -59,14 +58,14 @@ class HomeView(ctk.CTkFrame):
         self.entry_dest = self._build_input_row(input_container, self.app.cfg.get("memories_path"))
 
         # DOWNLOAD
-        dl_frame = ctk.CTkFrame(self.card, fg_color=BG_CARD, corner_radius=15, border_width=2, border_color="#333333")
+        dl_frame = ctk.CTkFrame(self.card, fg_color=BG_CARD, corner_radius=15, border_width=2, border_color=BG_HOVER)
         dl_frame.pack(fill="x", padx=30, pady=(20, 15), ipady=10)
         dl_frame.grid_columnconfigure(1, weight=1)
         
         icon_dl = assets.load_icon("download-cloud", size=(20, 20))
         self.btn_dl = ctk.CTkButton(dl_frame, text=" Download Memories", image=icon_dl, compound="left",
                                     command=self.toggle_download, fg_color=BG_SIDEBAR, hover_color=BG_HOVER, 
-                                    text_color=TEXT_MAIN, width=180, height=35, corner_radius=18, border_width=1, border_color="#444")
+                                    text_color=TEXT_MAIN, width=180, height=35, corner_radius=18, border_width=1, border_color=BG_HOVER)
         self.btn_dl.grid(row=0, column=0, padx=15, pady=10)
         
         self.lbl_status = ctk.CTkLabel(dl_frame, text="Ready to fetch missing files", text_color=TEXT_DIM, font=("Segoe UI", 11))
@@ -114,6 +113,7 @@ class HomeView(ctk.CTkFrame):
             if line.startswith("# "):
                 ctk.CTkLabel(parent, text=line[2:], font=("Segoe UI", 20, "bold"), text_color=TEXT_MAIN, anchor="w").pack(fill="x", padx=15, pady=(10, 5))
             elif line.startswith("## "):
+                # FIX: Uses standardized dynamic SNAP_YELLOW
                 ctk.CTkLabel(parent, text=line[3:], font=("Segoe UI", 14, "bold"), text_color=SNAP_YELLOW, anchor="w").pack(fill="x", padx=15, pady=(15, 2))
             elif line.startswith("* "):
                 ctk.CTkLabel(parent, text="• " + line[2:], font=("Segoe UI", 13), text_color=TEXT_DIM, justify="left", anchor="w", wraplength=400).pack(fill="x", padx=25, pady=1)
@@ -137,7 +137,8 @@ class HomeView(ctk.CTkFrame):
         frame = ctk.CTkFrame(parent, fg_color="transparent")
         frame.pack(fill="x")
         
-        entry = ctk.CTkEntry(frame, fg_color=BG_MAIN, border_color=BG_CARD, text_color="white", height=40, corner_radius=10)
+        # FIX: Removed hardcoded "white" text to support dynamic theme colors
+        entry = ctk.CTkEntry(frame, fg_color=BG_MAIN, border_color=BG_CARD, height=40, corner_radius=10)
         entry.insert(0, default_val)
         entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
         

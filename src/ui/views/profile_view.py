@@ -40,12 +40,15 @@ class ProfileView(ctk.CTkFrame):
         id_info = ctk.CTkFrame(id_inner, fg_color="transparent")
         id_info.pack(side="left", fill="x", expand=True)
         ctk.CTkLabel(id_info, text=basic.get("Name", "Unknown"), font=("Segoe UI", 26, "bold"), text_color=TEXT_MAIN).pack(anchor="w")
+        
+        # Username uses dynamic SNAP_YELLOW (Dark Gold in Light Mode)
         ctk.CTkLabel(id_info, text=f"@{basic.get('Username', '')}", font=("Segoe UI", 16), text_color=SNAP_YELLOW).pack(anchor="w", pady=(2, 8))
-        ctk.CTkLabel(id_info, text=f"Born: {basic.get('Creation Date', '')[:10]}  •  Country: {basic.get('Country', '')}", 
-                     font=("Segoe UI", 13), text_color=TEXT_DIM).pack(anchor="w")
+        
+        # Info text uses dynamic TEXT_DIM for high contrast
+        info_text = f"Born: {basic.get('Creation Date', '')[:10]}  •  Country: {basic.get('Country', '')}"
+        ctk.CTkLabel(id_info, text=info_text, font=("Segoe UI", 13), text_color=TEXT_DIM).pack(anchor="w")
 
         # --- SECTION 2: SCORE STATS (MIDDLE) ---
-        # Container frame matches the padding of the identity card
         stats_container = ctk.CTkFrame(self, fg_color="transparent")
         stats_container.grid(row=1, column=0, columnspan=3, sticky="ew", padx=self.GUTTER/2, pady=self.GUTTER)
         stats_container.grid_columnconfigure((0, 1, 2), weight=1, uniform="equal_cols")
@@ -78,12 +81,9 @@ class ProfileView(ctk.CTkFrame):
         self._populate_travel_log()
 
     def _create_outer_column(self, col, title, icon_name):
-        # Uses standard grid with uniform columns for exact spacing
         frame = ctk.CTkFrame(self, fg_color=BG_SIDEBAR, corner_radius=12)
-        # Standardize padx: First column needs left margin, last column needs right margin
         p_left = self.GUTTER if col == 0 else self.GUTTER/2
         p_right = self.GUTTER if col == 2 else self.GUTTER/2
-        
         frame.grid(row=2, column=col, sticky="nsew", padx=(p_left, p_right), pady=(0, self.GUTTER))
         
         header = ctk.CTkFrame(frame, fg_color="transparent")
@@ -94,12 +94,10 @@ class ProfileView(ctk.CTkFrame):
         return frame
 
     def _create_scroll_container(self, parent, height=None):
-        # FIX: Only pass height if it is not None to avoid TypeError
         if height:
             scroll = ctk.CTkScrollableFrame(parent, fg_color="transparent", height=height)
         else:
             scroll = ctk.CTkScrollableFrame(parent, fg_color="transparent")
-        
         scroll.pack(fill="both", expand=True, padx=10, pady=(0, 10))
         scroll.grid_columnconfigure(0, weight=1)
         return scroll
@@ -122,8 +120,7 @@ class ProfileView(ctk.CTkFrame):
         for i, dev in enumerate(self.profile.get("device_history", [])):
             row = ctk.CTkFrame(self.device_scroll, fg_color=BG_CARD, corner_radius=8)
             row.grid(row=i, column=0, sticky="ew", padx=5, pady=2)
-            model = f"{dev.get('Make', '')} {dev.get('Model', '')}"
-            ctk.CTkLabel(row, text=model, font=("Segoe UI", 13, "bold"), text_color=TEXT_MAIN).pack(side="left", padx=15, pady=10)
+            ctk.CTkLabel(row, text=f"{dev.get('Make', '')} {dev.get('Model', '')}", font=("Segoe UI", 13, "bold"), text_color=TEXT_MAIN).pack(side="left", padx=15, pady=10)
             ctk.CTkLabel(row, text=dev.get('Start Time', '')[:10], font=("Segoe UI", 11), text_color=TEXT_DIM).pack(side="right", padx=15)
 
     def _populate_name_history(self):
@@ -137,8 +134,10 @@ class ProfileView(ctk.CTkFrame):
         for i, p in enumerate(self.profile.get("places", [])):
             row = ctk.CTkFrame(self.map_scroll, fg_color="transparent")
             row.grid(row=i, column=0, sticky="ew", padx=5, pady=4)
-            ctk.CTkLabel(row, text=p.get("Date", "")[:10], width=85, text_color=TEXT_DIM, font=("Segoe UI", 11, "bold"), fg_color=BG_CARD, corner_radius=6).pack(side="left", padx=(5, 12))
+            date_lbl = ctk.CTkLabel(row, text=p.get("Date", "")[:10], width=85, text_color=TEXT_DIM, font=("Segoe UI", 11, "bold"), fg_color=BG_CARD, corner_radius=6)
+            date_lbl.pack(side="left", padx=(5, 12))
             txt_frame = ctk.CTkFrame(row, fg_color="transparent")
             txt_frame.pack(side="left", fill="x", expand=True)
             ctk.CTkLabel(txt_frame, text=p.get("Place", "Unknown"), text_color=TEXT_MAIN, anchor="w", font=("Segoe UI", 13, "bold")).pack(fill="x")
-            if p.get("Place Location"): ctk.CTkLabel(txt_frame, text=p.get("Place Location"), text_color=TEXT_DIM, anchor="w", font=("Segoe UI", 11)).pack(fill="x")
+            if p.get("Place Location"): 
+                ctk.CTkLabel(txt_frame, text=p.get("Place Location"), text_color=TEXT_DIM, anchor="w", font=("Segoe UI", 11)).pack(fill="x")

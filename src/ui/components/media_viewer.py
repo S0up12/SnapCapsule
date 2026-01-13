@@ -53,8 +53,10 @@ class GlobalMediaPlayer(ctk.CTkFrame):
         top_bar = ctk.CTkFrame(self, fg_color="transparent", height=40)
         top_bar.pack(fill="x", padx=10, pady=10)
         
-        self.lbl_counter = ctk.CTkLabel(top_bar, text=f"{self.index + 1} / {len(self.playlist)}", 
-                                        font=("Segoe UI", 12, "bold"), text_color="#666")
+        self.lbl_counter = ctk.CTkLabel(top_bar, 
+                                        text=f"{self.index + 1} / {len(self.playlist)}", 
+                                        font=("Segoe UI", 12, "bold"), 
+                                        text_color=TEXT_DIM)
         self.lbl_counter.pack(side="left", padx=10)
 
         icon_x = assets.load_icon("x", size=(24, 24))
@@ -82,9 +84,12 @@ class GlobalMediaPlayer(ctk.CTkFrame):
         self.lbl_media = ctk.CTkLabel(self.display_frame, text="Loading...", text_color="#555")
         self.lbl_media.pack(expand=True, fill="both")
         
-        self.btn_error_open = ctk.CTkButton(self.display_frame, text="Open in System Player", 
+        self.btn_error_open = ctk.CTkButton(self.display_frame, 
+                                            text="Open in System Player", 
                                             font=("Segoe UI", 14, "bold"),
-                                            fg_color=BG_CARD, hover_color=BG_HOVER,
+                                            fg_color=BG_CARD, 
+                                            hover_color=BG_HOVER,
+                                            text_color=TEXT_MAIN, # Added this
                                             command=self.open_system)
 
         icon_next = assets.load_icon("chevron-right", size=(40, 40))

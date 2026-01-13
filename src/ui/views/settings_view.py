@@ -1,5 +1,6 @@
 import customtkinter as ctk
 import os
+import shutil
 import webbrowser
 from ui.theme import *
 from utils.assets import assets
@@ -24,44 +25,60 @@ class SettingsView(ctk.CTkFrame):
         
         icon_settings = assets.load_icon("settings", size=(24, 24))
         ctk.CTkLabel(header_frame, text="", image=icon_settings).pack(side="left", padx=(0, 10))
-        ctk.CTkLabel(header_frame, text="Storage & Export Settings", font=("Segoe UI", 20, "bold"), text_color=TEXT_MAIN).pack(side="left")
+        ctk.CTkLabel(header_frame, text="Settings & Personalization", font=("Segoe UI", 20, "bold"), text_color=TEXT_MAIN).pack(side="left")
 
-        # Data Root Info
-        self._add_storage_card(container, 1, "Exported Data Root", 
+        # 1. Appearance Section
+        self._build_theme_section(container, 1)
+
+        # 2. Storage Sections
+        self._add_storage_card(container, 2, "Exported Data Root", 
                                self.cfg.get("data_root"), 
-                               "The main directory containing your Snapchat JSON files and chat media. "
-                               "This is where the app looks for your chat history, profile, and friends list.")
+                               "The main directory containing your Snapchat JSON files and chat media.")
 
-        # Memories Path Info
-        self._add_storage_card(container, 2, "Memories Storage", 
+        self._add_storage_card(container, 3, "Memories Storage", 
                                self.cfg.get("memories_path"), 
-                               "The specific folder where your downloaded Snap Memories (photos and videos) are stored. "
-                               "The app links these files to your account history based on their timestamps.")
+                               "The folder where your downloaded Snap Memories are stored.")
 
-        # Cache Info
-        cache_path = os.path.join(self.cfg.get("data_root"), "cache") if self.cfg.get("data_root") else ""
-        self._add_storage_card(container, 3, "Application Cache", 
-                               cache_path, 
-                               "Used to store generated video thumbnails and temporary UI assets to improve performance. "
-                               "This folder is created automatically within your Data Root.")
+        # 3. Cache Management Section
+        self._build_cache_section(container, 4)
+
+    def _build_theme_section(self, parent, row):
+        card = ctk.CTkFrame(parent, fg_color=BG_CARD, corner_radius=10)
+        card.grid(row=row, column=0, sticky="ew", padx=20, pady=10)
+        card.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(card, text="Appearance", font=("Segoe UI", 14, "bold"), text_color=SNAP_BLUE).grid(row=0, column=0, sticky="w", padx=15, pady=(15, 5))
+        
+        # Load the actual current mode from config
+        current_mode = self.cfg.get("appearance_mode")
+        
+        self.mode_switch = ctk.CTkSegmentedButton(card, values=["Light", "Dark", "System"],
+                                                 command=self._change_appearance_mode)
+        self.mode_switch.set(current_mode)
+        self.mode_switch.grid(row=1, column=0, sticky="w", padx=15, pady=(5, 15))
+
+    def _change_appearance_mode(self, new_mode):
+        # 1. Apply UI theme immediately
+        ctk.set_appearance_mode(new_mode)
+        
+        # 2. Persist to file
+        self.cfg.save_config(
+            self.cfg.get("data_root"), 
+            self.cfg.get("memories_path"), 
+            appearance_mode=new_mode
+        )
 
     def _add_storage_card(self, parent, row, title, path, description):
         card = ctk.CTkFrame(parent, fg_color=BG_CARD, corner_radius=10)
         card.grid(row=row, column=0, sticky="ew", padx=20, pady=10)
         card.grid_columnconfigure(0, weight=1)
 
-        # Title Row with Icon
-        title_frame = ctk.CTkFrame(card, fg_color="transparent")
-        title_frame.grid(row=0, column=0, sticky="ew", padx=15, pady=(15, 5))
+        ctk.CTkLabel(card, text=title, font=("Segoe UI", 14, "bold"), text_color=SNAP_BLUE).grid(row=0, column=0, sticky="w", padx=15, pady=(15, 5))
         
-        ctk.CTkLabel(title_frame, text=title, font=("Segoe UI", 14, "bold"), text_color=SNAP_BLUE).pack(side="left")
-        
-        # Path display container (Input-style row)
         path_row = ctk.CTkFrame(card, fg_color="transparent")
         path_row.grid(row=1, column=0, sticky="ew", padx=15, pady=5)
         path_row.grid_columnconfigure(0, weight=1)
 
-        # Clickable Path Box
         path_box = ctk.CTkFrame(path_row, fg_color=BG_MAIN, corner_radius=6)
         path_box.grid(row=0, column=0, sticky="ew", padx=(0, 10))
         
@@ -69,31 +86,70 @@ class SettingsView(ctk.CTkFrame):
         path_lbl = ctk.CTkLabel(path_box, text=display_path, font=("Consolas", 11), text_color=TEXT_DIM, wraplength=600, justify="left")
         path_lbl.pack(padx=10, pady=5, anchor="w")
 
-        # Open Folder Button
-        icon_folder = assets.load_icon("external-link", size=(16, 16))
-        open_btn = ctk.CTkButton(path_row, text="Open", image=icon_folder, width=80, height=32, 
+        icon_open = assets.load_icon("external-link", size=(16, 16))
+        open_btn = ctk.CTkButton(path_row, text="Open", image=icon_open, width=80, height=32, 
                                  fg_color=BG_SIDEBAR, hover_color=BG_HOVER,
                                  command=lambda p=path: self._open_folder(p))
         open_btn.grid(row=0, column=1, sticky="e")
 
-        # Disable button if path is empty
         if not path or not os.path.exists(path):
-            open_btn.configure(state="disabled", text_color="#555")
+            open_btn.configure(state="disabled")
 
-        # Description
-        ctk.CTkLabel(card, text=description, font=("Segoe UI", 12), text_color=TEXT_MAIN, wraplength=750, justify="left").grid(row=2, column=0, sticky="w", padx=15, pady=(5, 15))
+        ctk.CTkLabel(card, text=description, font=("Segoe UI", 11), text_color=TEXT_DIM, wraplength=750, justify="left").grid(row=2, column=0, sticky="w", padx=15, pady=(5, 15))
 
-    def _open_folder(self, path):
-        """Opens the specified path in the system file explorer."""
+    def _build_cache_section(self, parent, row):
+        card = ctk.CTkFrame(parent, fg_color=BG_CARD, corner_radius=10)
+        card.grid(row=row, column=0, sticky="ew", padx=20, pady=10)
+        card.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(card, text="Application Cache", font=("Segoe UI", 14, "bold"), text_color=SNAP_BLUE).grid(row=0, column=0, sticky="w", padx=15, pady=(15, 5))
+        
+        cache_path = os.path.join(self.cfg.get("data_root"), "cache") if self.cfg.get("data_root") else ""
+        size_str = self._get_directory_size(cache_path)
+
+        info_row = ctk.CTkFrame(card, fg_color="transparent")
+        info_row.grid(row=1, column=0, sticky="ew", padx=15, pady=5)
+        
+        ctk.CTkLabel(info_row, text=f"Current Size: {size_str}", font=("Segoe UI", 12, "bold"), text_color=TEXT_MAIN).pack(side="left")
+        
+        self.clear_btn = ctk.CTkButton(info_row, text="Clear Cache", width=100, height=32, 
+                                       fg_color="#330000", hover_color="#550000",
+                                       command=lambda: self._clear_cache(cache_path))
+        self.clear_btn.pack(side="right")
+
+        ctk.CTkLabel(card, text="Clearing the cache will delete video thumbnails. They will be re-generated automatically.", 
+                     font=("Segoe UI", 11), text_color=TEXT_DIM, wraplength=700, justify="left").grid(row=2, column=0, sticky="w", padx=15, pady=(5, 15))
+
+    def _get_directory_size(self, path):
+        if not path or not os.path.exists(path):
+            return "0 bytes"
+        total_size = 0
+        try:
+            for dirpath, dirnames, filenames in os.walk(path):
+                for f in filenames:
+                    fp = os.path.join(dirpath, f)
+                    total_size += os.path.getsize(fp)
+        except: return "Error"
+
+        for unit in ['bytes', 'KB', 'MB', 'GB']:
+            if total_size < 1024:
+                return f"{total_size:.1f} {unit}"
+            total_size /= 1024
+        return f"{total_size:.1f} TB"
+
+    def _clear_cache(self, path):
         if not path or not os.path.exists(path):
             return
-            
         try:
-            # Normalize path for the OS
-            norm_path = os.path.normpath(path)
-            if os.name == 'nt':
-                os.startfile(norm_path)
-            else:
-                webbrowser.open(norm_path)
+            shutil.rmtree(path)
+            self._setup_ui() 
         except Exception as e:
-            print(f"Error opening folder: {e}")
+            print(f"Error clearing cache: {e}")
+
+    def _open_folder(self, path):
+        if not path or not os.path.exists(path): return
+        try:
+            norm_path = os.path.normpath(path)
+            if os.name == 'nt': os.startfile(norm_path)
+            else: webbrowser.open(f"file://{norm_path}")
+        except Exception as e: print(f"Error: {e}")

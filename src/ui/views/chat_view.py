@@ -84,8 +84,14 @@ class ChatBubble(ctk.CTkFrame):
     def add_message_content(self, message):
         """Appends text or media to this bubble's container."""
         if message['text']:
-            ctk.CTkLabel(self.content_container, text=message['text'], font=("Segoe UI", 14), 
-                         text_color="#E0E0E0", justify="left", anchor="w", wraplength=500).pack(anchor="w")
+            # FIX: Changed text_color from hardcoded "#E0E0E0" to theme-aware TEXT_MAIN
+            ctk.CTkLabel(self.content_container, 
+                         text=message['text'], 
+                         font=("Segoe UI", 14), 
+                         text_color=TEXT_MAIN, 
+                         justify="left", 
+                         anchor="w", 
+                         wraplength=500).pack(anchor="w")
 
         if message['media']:
             for path in message['media']:

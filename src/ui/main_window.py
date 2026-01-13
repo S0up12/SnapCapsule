@@ -17,6 +17,10 @@ class MainWindow(ctk.CTk):
         self.data_manager = data_manager
         self.cfg = config_manager
         
+        # 1. SET THEME FIRST FROM CONFIG
+        saved_mode = self.cfg.get("appearance_mode")
+        ctk.set_appearance_mode(saved_mode) 
+        
         self.title("SnapCapsule")
         
         try:
