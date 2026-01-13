@@ -242,23 +242,34 @@ class HomeView(ctk.CTkFrame):
         self.btn_dl.configure(text=" Download Memories", image=icon_dl, fg_color=BG_SIDEBAR, hover_color=BG_HOVER, state="normal")
 
     def save(self):
+        # 1. Save the new paths to config.json
         self.app.cfg.save_config(self.entry_root.get(), self.entry_dest.get())
-        self.app.chats, self.app.memories, self.app.profile = self.app.data_manager.reload()
         
+        # 2. Reload data from the new paths
+        # DataManager.reload returns (chat_index, memories, profile)
+        chat_index, memories, profile = self.app.data_manager.reload()
+        
+        # 3. Update the main application state
+        self.app.chat_index = chat_index
+        self.app.memories = memories
+        self.app.profile = profile
+        
+        # 4. Refresh individual views if they exist
         if self.app.view_chat: 
-            self.app.view_chat.chats = self.app.chats
-            self.app.view_chat.populate_friends(sorted(self.app.chats.keys()))
+            # Corrected: Pass the list (chat_index), not a dict.keys() call
+            self.app.view_chat.chat_list = chat_index
+            self.app.view_chat.populate_friends(chat_index)
             
         if self.app.view_memories: 
-            self.app.view_memories.memories = self.app.memories
-            self.app.view_memories._calculate_stats()
-            self.app.view_memories.on_sort_changed("Newest > Oldest")
+            self.app.view_memories.memories = memories
+            # Refresh the memory view layout
             for w in self.app.view_memories.winfo_children():
-                if isinstance(w, ctk.CTkFrame) and w.winfo_height() == 45:
-                    w.destroy()
+                w.destroy()
             self.app.view_memories._setup_ui()
 
         if self.app.view_profile:
+            # Simplest way to refresh profile is to destroy and let it recreate
             self.app.view_profile.destroy()
+            self.app.view_profile = None
             
         print("✅ Configuration Saved & Data Reloaded")
