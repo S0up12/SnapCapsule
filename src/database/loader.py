@@ -221,3 +221,30 @@ class DataManager:
 
         # 5. Travel
         self.profile['places'] = load_safe("snap_map_places_history.json", "Snap Map Places History")[:100]
+        
+    def perform_integrity_check(self):
+        """Cross-references JSON records with physical files on disk."""
+        report = {
+            "chats": {"total": 0, "missing": 0},
+            "memories": {"total": 0, "missing": 0}
+        }
+        
+        # Check Chat Media
+        for friend in self.raw_chats:
+            msgs = self.raw_chats[friend]
+            for msg in msgs:
+                mids = msg.get("Media IDs", "")
+                if mids:
+                    ids = mids if isinstance(mids, list) else str(mids).split(" | ")
+                    for mid in ids:
+                        report["chats"]["total"] += 1
+                        if mid not in self.media_map:
+                            report["chats"]["missing"] += 1
+                            
+        # Check Memories
+        for mem in self.memories:
+            report["memories"]["total"] += 1
+            if not mem.get("path") or not os.path.exists(mem["path"]):
+                report["memories"]["missing"] += 1
+                
+        return report

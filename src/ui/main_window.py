@@ -165,7 +165,8 @@ class MainWindow(ctk.CTk):
         self._hide_all_views()
         self._update_active_tab("settings")
         if not self.view_settings:
-            self.view_settings = SettingsView(self.content_frame, self.cfg)
+            # Change: Pass self.data_manager here
+            self.view_settings = SettingsView(self.content_frame, self.cfg, self.data_manager) 
         self.view_settings.grid(row=0, column=0, sticky="nsew")
 
     def _on_global_mouse_wheel(self, event):
