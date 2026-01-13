@@ -65,16 +65,11 @@ class ChatBubble(ctk.CTkFrame):
         bar = ctk.CTkFrame(body_frame, width=3, fg_color=accent_color, height=20, corner_radius=0)
         bar.pack(side="left", fill="y", padx=(0, 10))
         
-        content_container = ctk.CTkFrame(body_frame, fg_color="transparent")
-        content_container.pack(side="left", fill="x")
+        self.content_container = ctk.CTkFrame(body_frame, fg_color="transparent")
+        self.content_container.pack(side="left", fill="x")
 
-        if message['text']:
-            ctk.CTkLabel(content_container, text=message['text'], font=("Segoe UI", 14), 
-                         text_color="#E0E0E0", justify="left", anchor="w", wraplength=500).pack(anchor="w")
-
-        if message['media']:
-            for path in message['media']:
-                self.render_media_placeholder(content_container, path)
+        # Initial content
+        self.add_message_content(message)
 
         try:
             dt = datetime.strptime(message['date'], "%Y-%m-%d %H:%M")
@@ -82,9 +77,19 @@ class ChatBubble(ctk.CTkFrame):
         except: time_str = ""
         self.time_lbl = ctk.CTkLabel(body_frame, text=time_str, font=("Segoe UI", 10), text_color="#555555")
         
-        for w in [self, body_frame, content_container]:
+        for w in [self, body_frame, self.content_container]:
             w.bind("<Enter>", lambda e: self.time_lbl.pack(side="left", padx=(10, 0)))
             w.bind("<Leave>", lambda e: self.time_lbl.pack_forget())
+
+    def add_message_content(self, message):
+        """Appends text or media to this bubble's container."""
+        if message['text']:
+            ctk.CTkLabel(self.content_container, text=message['text'], font=("Segoe UI", 14), 
+                         text_color="#E0E0E0", justify="left", anchor="w", wraplength=500).pack(anchor="w")
+
+        if message['media']:
+            for path in message['media']:
+                self.render_media_placeholder(self.content_container, path)
 
     def render_media_placeholder(self, parent, path):
         btn = ctk.CTkButton(parent, text="Loading...", width=200, height=150, 
@@ -378,12 +383,17 @@ class ChatView(ctk.CTkFrame):
         
         msgs = self.current_messages[self.view_start : self.view_end]
         last_date = ""
+        last_sender = None
+        last_minute = None
+        
         info = self.friend_map.get(self.current_friend_key, {"display": self.current_friend_key})
         anchor_widget = None
+        last_bubble = None
         
         for i, msg in enumerate(msgs):
             if not msg['text'] and not msg['media']: continue
             
+            # Date separator logic
             d = msg['date'].split(" ")[0]
             if d != last_date:
                 f = ctk.CTkFrame(self.scroll_chat, fg_color="transparent")
@@ -394,11 +404,28 @@ class ChatView(ctk.CTkFrame):
                 except: txt = d
                 ctk.CTkLabel(f, text=txt, font=("Segoe UI", 10, "bold"), text_color="#666").pack()
                 last_date = d
+                # Reset combining on new date
+                last_sender = None
+                last_minute = None
+
+            # Combiner Logic
+            current_sender = msg['sender']
+            current_time = msg['date'] # "YYYY-MM-DD HH:MM"
+
+            if last_bubble and current_sender == last_sender and current_time == last_minute:
+                # Combine into previous bubble
+                last_bubble.add_message_content(msg)
+                bubble = last_bubble
+            else:
+                # Create new bubble
+                is_me = (current_sender != self.current_friend_key)
+                bubble = ChatBubble(self.scroll_chat, msg, is_me, info["display"], self.executor, self.is_active, 
+                           media_callback=self.show_media)
+                last_bubble = bubble
+                last_sender = current_sender
+                last_minute = current_time
             
-            is_me = (msg['sender'] != self.current_friend_key)
-            bubble = ChatBubble(self.scroll_chat, msg, is_me, info["display"], self.executor, self.is_active, 
-                       media_callback=self.show_media)
-            
+            # Anchor tracking
             if target_anchor == "bottom" and i == len(msgs)-1:
                 anchor_widget = bubble
             elif target_anchor and bubble.msg_id == target_anchor:
@@ -415,7 +442,7 @@ class ChatView(ctk.CTkFrame):
                 # Lift Curtain Here
                 self.initial_loader.place_forget()
                 self._finish_rendering()
-            self.after(200, complete_load) # Wait for layout to settle
+            self.after(200, complete_load)
             
         elif anchor_widget:
             try:
