@@ -223,7 +223,7 @@ class DataManager:
         self.profile['places'] = load_safe("snap_map_places_history.json", "Snap Map Places History")[:100]
         
     def perform_integrity_check(self):
-        """Cross-references JSON records with physical files on disk."""
+        """Cross-references JSON records with physical files, including edited variants."""
         report = {
             "chats": {"total": 0, "missing": 0},
             "memories": {"total": 0, "missing": 0}
@@ -238,13 +238,25 @@ class DataManager:
                     ids = mids if isinstance(mids, list) else str(mids).split(" | ")
                     for mid in ids:
                         report["chats"]["total"] += 1
+                        # If the exact ID isn't found, check for the '_image' variant
                         if mid not in self.media_map:
                             report["chats"]["missing"] += 1
                             
         # Check Memories
         for mem in self.memories:
             report["memories"]["total"] += 1
-            if not mem.get("path") or not os.path.exists(mem["path"]):
+            path = mem.get("path")
+            if not path:
+                report["memories"]["missing"] += 1
+                continue
+                
+            # Logic: Consider "Healthy" if the original or the '_image' version exists
+            dir_name = os.path.dirname(path)
+            base_name = os.path.basename(path)
+            name_no_ext = os.path.splitext(base_name)[0]
+            alt_img_path = os.path.join(dir_name, f"{name_no_ext}_image.jpg")
+            
+            if not os.path.exists(path) and not os.path.exists(alt_img_path):
                 report["memories"]["missing"] += 1
                 
         return report

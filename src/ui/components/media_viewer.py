@@ -120,6 +120,44 @@ class GlobalMediaPlayer(ctk.CTkFrame):
         self.vol_slider = ctk.CTkSlider(self.controls_frame, from_=0, to=100, width=80, command=self.on_volume)
         self.vol_slider.pack(side="left", padx=10)
         self.vol_slider.set(100)
+        
+    def _resolve_image_source(self, original_path):
+        """
+        Detects if a Snapchat 'image' and 'caption' pair exists and returns a 
+        composited PIL Image. Otherwise, returns the standard image file.
+        """
+        dir_name = os.path.dirname(original_path)
+        base_name = os.path.basename(original_path)
+        name_no_ext = os.path.splitext(base_name)[0]
+
+        # Potential variants
+        img_variant = os.path.join(dir_name, f"{name_no_ext}_image.jpg")
+        cap_variant = os.path.join(dir_name, f"{name_no_ext}_caption.png")
+
+        # Case 1: Both base and caption exist - Composite them
+        if os.path.exists(img_variant) and os.path.exists(cap_variant):
+            try:
+                base = Image.open(img_variant).convert("RGBA")
+                overlay = Image.open(cap_variant).convert("RGBA")
+                
+                # Resize overlay to match base if necessary
+                if overlay.size != base.size:
+                    overlay = overlay.resize(base.size, Image.Resampling.LANCZOS)
+                
+                return Image.alpha_composite(base, overlay).convert("RGB")
+            except: pass
+
+        # Case 2: Only the '_image' variant exists
+        if os.path.exists(img_variant):
+            try: return Image.open(img_variant)
+            except: pass
+
+        # Case 3: Fallback to the original path
+        if os.path.exists(original_path):
+            try: return Image.open(original_path)
+            except: pass
+
+        return None
 
     def _reset_player(self):
         self.playing = False
@@ -198,11 +236,16 @@ class GlobalMediaPlayer(ctk.CTkFrame):
 
     def _display_image(self):
         try:
-            img = Image.open(self.file_path)
-            w = self.winfo_width() - 100
-            h = self.winfo_height() - 100
+            # Call the new resolver instead of direct Image.open
+            img = self._resolve_image_source(self.file_path)
+            if not img:
+                self._show_error_state("Image Variant Missing")
+                return
+
+            self.update_idletasks()
+            w, h = self.winfo_width() - 100, self.winfo_height() - 150
             img = ImageOps.contain(img, (w, h), method=Image.Resampling.LANCZOS)
-            ctk_img = ctk.CTkImage(img, size=img.size)
+            ctk_img = ctk.CTkImage(light_image=img, dark_image=img, size=img.size)
             self.lbl_media.configure(image=ctk_img, text="")
             self.lbl_media.image = ctk_img
         except: self._show_error_state("Invalid Image")

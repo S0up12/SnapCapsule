@@ -4,7 +4,7 @@ import os
 import math
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from utils.image_utils import extract_video_thumbnail, add_play_icon
+from utils.image_utils import extract_video_thumbnail, add_play_icon, composite_snap_image
 from ui.theme import *
 from ui.components.media_viewer import GlobalMediaPlayer
 from utils.assets import assets
@@ -14,6 +14,7 @@ class MemoryCard(ctk.CTkFrame):
         super().__init__(parent, fg_color="transparent", width=width, height=200)
         self.pack_propagate(False) 
         self.path = memory['path']
+        self.memory = memory  # Store full memory dict for overlay access
         self.click_callback = click_callback
         self.executor = executor
         self.is_loaded = False
@@ -60,8 +61,13 @@ class MemoryCard(ctk.CTkFrame):
             is_video = False
             
             if ext in ['.jpg', '.jpeg', '.png', '.webp']:
-                pil_img = Image.open(self.path)
-                pil_img.thumbnail((300, 300))
+                from utils.media_resolver import MediaResolver
+                # Use the resolver to handle potential captions/overlays
+                pil_img = MediaResolver.get_display_image(self.path)
+                
+                if pil_img:
+                    pil_img.thumbnail((300, 300))
+                    
             elif ext in ['.mp4', '.mov', '.avi']:
                 is_video = True
                 pil_img = extract_video_thumbnail(self.path)
@@ -71,7 +77,8 @@ class MemoryCard(ctk.CTkFrame):
                 self.after(0, lambda: self._apply_image(pil_img, is_video))
             else:
                 self.after(0, lambda: self._set_placeholder_state(is_missing=False))
-        except:
+        except Exception as e:
+            print(f"Error loading memory {self.path}: {e}")
             self.after(0, lambda: self._set_placeholder_state(is_missing=True))
 
     def _apply_image(self, pil_img, is_video):
@@ -106,26 +113,24 @@ class MemoriesView(ctk.CTkFrame):
     def __init__(self, parent, memories_data):
         super().__init__(parent, fg_color="transparent")
         
-        # BUG FIX #3: Filter out memories that are missing physical files
-        self.memories = [m for m in memories_data if m.get('path') and os.path.exists(m['path'])] #
+        # Filter out memories that are missing physical base files
+        self.memories = [m for m in memories_data if m.get('path') and os.path.exists(m['path'])]
         
         self.PAGE_SIZE = 50
         self.current_page = 1
         self.executor = ThreadPoolExecutor(max_workers=4)
         self.last_width = 0
         
-        # BUG FIX #3: Recalculate stats based on filtered list
-        self._calculate_stats() #
-        
+        self._calculate_stats() 
         self._setup_ui()
         self.after(50, lambda: self.load_page(1))
 
     def _calculate_stats(self):
         """Updates internal counters based on the current (filtered) memories list."""
-        self.total_count = len(self.memories) #
-        self.video_count = sum(1 for m in self.memories if os.path.splitext(m['path'])[1].lower() in ['.mp4','.mov']) #
-        self.photo_count = self.total_count - self.video_count #
-        self.total_pages = math.ceil(self.total_count / self.PAGE_SIZE) if self.total_count > 0 else 1 #
+        self.total_count = len(self.memories)
+        self.video_count = sum(1 for m in self.memories if os.path.splitext(m['path'])[1].lower() in ['.mp4','.mov','.avi'])
+        self.photo_count = self.total_count - self.video_count
+        self.total_pages = math.ceil(self.total_count / self.PAGE_SIZE) if self.total_count > 0 else 1
 
     def destroy(self):
         self.executor.shutdown(wait=False)
@@ -146,7 +151,6 @@ class MemoriesView(ctk.CTkFrame):
         self._add_stat(top_bar, f"{self.photo_count}", SNAP_BLUE, "camera")
         self._add_stat(top_bar, f"{self.video_count}", SNAP_RED, "video")
 
-        # Top Right Pagination Container
         self.nav_frame = ctk.CTkFrame(top_bar, fg_color="transparent")
         self.nav_frame.pack(side="right", padx=15)
         
@@ -258,10 +262,8 @@ class MemoriesView(ctk.CTkFrame):
             card.pack(side="left", padx=2) 
             current_row_count += 1
 
-        # BUG FIX #2: Force the scrollable frame to recalculate its internal size
-        # This prevents scrolling past the last row into empty space.
-        self.scroll_mems.update_idletasks() #
-        self.scroll_mems._parent_canvas.configure(scrollregion=self.scroll_mems._parent_canvas.bbox("all")) #
+        self.scroll_mems.update_idletasks()
+        self.scroll_mems._parent_canvas.configure(scrollregion=self.scroll_mems._parent_canvas.bbox("all"))
 
         ctk.CTkLabel(self.scroll_mems, text="", height=50).pack(pady=20)
         self.scroll_mems.update_idletasks()
