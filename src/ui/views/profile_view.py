@@ -1,12 +1,15 @@
 import customtkinter as ctk
 from datetime import datetime
 from ui.theme import *
-from utils.assets import assets  # <--- NEW IMPORT
+from utils.assets import assets
 
 class ProfileView(ctk.CTkFrame):
     def __init__(self, parent, profile_data):
         super().__init__(parent, fg_color="transparent")
         self.profile = profile_data or {}
+        
+        # Standardized gutter for perfect alignment
+        self.GUTTER = 15 
         
         # Pointers for global scroll handler
         self.map_scroll = None
@@ -14,203 +17,128 @@ class ProfileView(ctk.CTkFrame):
         self.device_scroll = None
         self.name_scroll = None
         
-        # Column Frames
-        self.col_friends = None
-        self.col_history = None
-        self.col_travel = None
-        
         self._setup_ui()
 
     def _setup_ui(self):
-        # --- Main Grid Configuration (3 Columns) ---
-        self.grid_columnconfigure(0, weight=1) # Friends
-        self.grid_columnconfigure(1, weight=1) # History
-        self.grid_columnconfigure(2, weight=1) # Travel
-        self.grid_rowconfigure(1, weight=1)    # Content expands vertically
+        # Configure main layout grid (3 Equal Columns)
+        self.grid_columnconfigure((0, 1, 2), weight=1, uniform="equal_cols")
+        self.grid_rowconfigure(2, weight=1) # Detailed lists expand
 
-        # --- ROW 0: Identity & Stats (Spans all columns) ---
-        top_frame = ctk.CTkFrame(self, fg_color="transparent")
-        top_frame.grid(row=0, column=0, columnspan=3, sticky="ew", padx=20, pady=(20, 10))
-        
-        self._build_identity_card(top_frame)
-        self._build_stats_row(top_frame)
-
-        # --- ROW 1: Content Columns ---
-        
-        # 1. Left Column: Friends List
-        self.col_friends = ctk.CTkFrame(self, fg_color=BG_SIDEBAR, corner_radius=10)
-        self.col_friends.grid(row=1, column=0, sticky="nsew", padx=(20, 5), pady=20)
-        self.col_friends.grid_columnconfigure(0, weight=1)
-        self.col_friends.grid_rowconfigure(1, weight=1) 
-
-        # 2. Middle Column: History (Devices & Names)
-        self.col_history = ctk.CTkFrame(self, fg_color=BG_SIDEBAR, corner_radius=10)
-        self.col_history.grid(row=1, column=1, sticky="nsew", padx=5, pady=20)
-        self.col_history.grid_columnconfigure(0, weight=1)
-        self.col_history.grid_rowconfigure(1, weight=1) # Devices expands
-        self.col_history.grid_rowconfigure(3, weight=1) # Names expands
-
-        # 3. Right Column: Travel Log
-        self.col_travel = ctk.CTkFrame(self, fg_color=BG_SIDEBAR, corner_radius=10)
-        self.col_travel.grid(row=1, column=2, sticky="nsew", padx=(5, 20), pady=20)
-        self.col_travel.grid_columnconfigure(0, weight=1)
-        self.col_travel.grid_rowconfigure(1, weight=1)
-
-        # --- Build Content ---
-        self._build_friends_list()
-        self._build_device_history()
-        self._build_name_history()
-        self._build_travel_log()
-
-    # --- Helper to toggle Scrollbar ---
-    def _create_list_container(self, parent):
-        container = ctk.CTkScrollableFrame(parent, fg_color="transparent")
-        return container
-
-    def _build_identity_card(self, parent):
+        # --- SECTION 1: IDENTITY CARD (TOP) ---
         basic = self.profile.get("basic", {})
-        card = ctk.CTkFrame(parent, fg_color=BG_CARD, corner_radius=10)
-        card.pack(fill="x", pady=(0, 10))
+        id_card = ctk.CTkFrame(self, fg_color=BG_CARD, corner_radius=12)
+        id_card.grid(row=0, column=0, columnspan=3, sticky="nsew", 
+                     padx=self.GUTTER, pady=(self.GUTTER, 0))
         
-        # Layout container for Icon + Text
-        container = ctk.CTkFrame(card, fg_color="transparent")
-        container.pack(fill="x", padx=20, pady=20)
+        id_inner = ctk.CTkFrame(id_card, fg_color="transparent")
+        id_inner.pack(padx=25, pady=25, fill="x")
         
-        # User Icon
-        icon_user = assets.load_icon("user", size=(60, 60))
+        icon_user = assets.load_icon("user", size=(64, 64))
         if icon_user:
-            ctk.CTkLabel(container, text="", image=icon_user).pack(side="left", padx=(0, 20), anchor="n")
+            ctk.CTkLabel(id_inner, text="", image=icon_user).pack(side="left", padx=(0, 25))
         
-        # Text Info
-        info_frame = ctk.CTkFrame(container, fg_color="transparent")
-        info_frame.pack(side="left", fill="x", expand=True)
-        
-        ctk.CTkLabel(info_frame, text=basic.get("Name", "Unknown"), font=("Segoe UI", 24, "bold"), text_color=TEXT_MAIN).pack(anchor="w", pady=(0, 5))
-        ctk.CTkLabel(info_frame, text=f"@{basic.get('Username', '')}", font=("Segoe UI", 16), text_color=SNAP_YELLOW).pack(anchor="w", pady=(0, 5))
-        
-        info_text = f"Born: {basic.get('Creation Date', '')[:10]}   |   Country: {basic.get('Country', '')}"
-        ctk.CTkLabel(info_frame, text=info_text, font=("Segoe UI", 14), text_color=TEXT_DIM, justify="left").pack(anchor="w", pady=(5, 0))
+        id_info = ctk.CTkFrame(id_inner, fg_color="transparent")
+        id_info.pack(side="left", fill="x", expand=True)
+        ctk.CTkLabel(id_info, text=basic.get("Name", "Unknown"), font=("Segoe UI", 26, "bold"), text_color=TEXT_MAIN).pack(anchor="w")
+        ctk.CTkLabel(id_info, text=f"@{basic.get('Username', '')}", font=("Segoe UI", 16), text_color=SNAP_YELLOW).pack(anchor="w", pady=(2, 8))
+        ctk.CTkLabel(id_info, text=f"Born: {basic.get('Creation Date', '')[:10]}  •  Country: {basic.get('Country', '')}", 
+                     font=("Segoe UI", 13), text_color=TEXT_DIM).pack(anchor="w")
 
-    def _build_stats_row(self, parent):
+        # --- SECTION 2: SCORE STATS (MIDDLE) ---
+        # Container frame matches the padding of the identity card
+        stats_container = ctk.CTkFrame(self, fg_color="transparent")
+        stats_container.grid(row=1, column=0, columnspan=3, sticky="ew", padx=self.GUTTER/2, pady=self.GUTTER)
+        stats_container.grid_columnconfigure((0, 1, 2), weight=1, uniform="equal_cols")
+
         eng = self.profile.get("engagement", {})
-        row = ctk.CTkFrame(parent, fg_color="transparent")
-        row.pack(fill="x", pady=0)
-        
-        # You can add icons for stats if you wish, e.g., 'camera', 'message-square'
-        self._stat_box(row, "Snaps Sent", eng.get("Snap Sends", 0))
-        self._stat_box(row, "Snaps Received", eng.get("Snap Views", 0))
-        self._stat_box(row, "Chats Sent", eng.get("Chats Sent", 0))
+        self._stat_box(stats_container, 0, "SNAPS SENT", eng.get("Snap Sends", 0))
+        self._stat_box(stats_container, 1, "SNAPS RECEIVED", eng.get("Snap Views", 0))
+        self._stat_box(stats_container, 2, "CHATS SENT", eng.get("Chats Sent", 0))
 
-    def _stat_box(self, parent, title, value):
-        f = ctk.CTkFrame(parent, fg_color=BG_CARD, corner_radius=10)
-        f.pack(side="left", fill="x", expand=True, padx=5)
-        
-        ctk.CTkLabel(f, text=f"{value:,}", font=("Segoe UI", 22, "bold"), text_color=SNAP_BLUE).pack(pady=(15, 0))
-        ctk.CTkLabel(f, text=title, font=("Segoe UI", 12), text_color=TEXT_DIM).pack(pady=(0, 15))
+        # --- SECTION 3: DETAILED COLUMNS (BOTTOM) ---
+        # 1. Friends Column
+        self.col_friends = self._create_outer_column(0, f"Friends ({self.profile.get('stats', {}).get('friends', 0)})", "users")
+        self.friends_scroll = self._create_scroll_container(self.col_friends)
+        self._populate_friends()
 
-    def _build_friends_list(self):
-        count = self.profile.get("stats", {}).get("friends", 0)
+        # 2. History Column
+        self.col_history = self._create_outer_column(1, "Device History", "smartphone")
+        self.device_scroll = self._create_scroll_container(self.col_history)
+        self._populate_device_history()
         
-        # Header with Icon
-        header_frame = ctk.CTkFrame(self.col_friends, fg_color="transparent")
-        header_frame.grid(row=0, column=0, sticky="ew", padx=15, pady=(15, 5))
+        evol_header = ctk.CTkFrame(self.col_history, fg_color="transparent")
+        evol_header.pack(fill="x", padx=20, pady=(15, 5))
+        ctk.CTkLabel(evol_header, text="Identity Evolution", font=("Segoe UI", 16, "bold"), text_color=TEXT_MAIN).pack(side="left")
+        self.name_scroll = self._create_scroll_container(self.col_history, height=150)
+        self._populate_name_history()
+
+        # 3. Travel Column
+        self.col_travel = self._create_outer_column(2, "Travel Log", "globe")
+        self.map_scroll = self._create_scroll_container(self.col_travel)
+        self._populate_travel_log()
+
+    def _create_outer_column(self, col, title, icon_name):
+        # Uses standard grid with uniform columns for exact spacing
+        frame = ctk.CTkFrame(self, fg_color=BG_SIDEBAR, corner_radius=12)
+        # Standardize padx: First column needs left margin, last column needs right margin
+        p_left = self.GUTTER if col == 0 else self.GUTTER/2
+        p_right = self.GUTTER if col == 2 else self.GUTTER/2
         
-        icon_users = assets.load_icon("users", size=(20, 20))
-        if icon_users:
-            ctk.CTkLabel(header_frame, text="", image=icon_users).pack(side="left", padx=(0, 8))
-            
-        ctk.CTkLabel(header_frame, text=f"Friends ({count})", font=("Segoe UI", 16, "bold"), text_color=TEXT_MAIN).pack(side="left")
+        frame.grid(row=2, column=col, sticky="nsew", padx=(p_left, p_right), pady=(0, self.GUTTER))
         
-        # List
-        self.friends_scroll = self._create_list_container(self.col_friends)
-        self.friends_scroll.grid(row=1, column=0, sticky="nsew", padx=5, pady=(5, 5))
+        header = ctk.CTkFrame(frame, fg_color="transparent")
+        header.pack(fill="x", padx=20, pady=(20, 10))
+        icon = assets.load_icon(icon_name, size=(20, 20))
+        if icon: ctk.CTkLabel(header, text="", image=icon).pack(side="left", padx=(0, 10))
+        ctk.CTkLabel(header, text=title, font=("Segoe UI", 16, "bold"), text_color=TEXT_MAIN).pack(side="left")
+        return frame
+
+    def _create_scroll_container(self, parent, height=None):
+        # FIX: Only pass height if it is not None to avoid TypeError
+        if height:
+            scroll = ctk.CTkScrollableFrame(parent, fg_color="transparent", height=height)
+        else:
+            scroll = ctk.CTkScrollableFrame(parent, fg_color="transparent")
         
+        scroll.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        scroll.grid_columnconfigure(0, weight=1)
+        return scroll
+
+    def _stat_box(self, parent, col, title, value):
+        f = ctk.CTkFrame(parent, fg_color=BG_CARD, corner_radius=12)
+        f.grid(row=0, column=col, sticky="nsew", padx=self.GUTTER/2)
+        ctk.CTkLabel(f, text=f"{value:,}", font=("Segoe UI", 24, "bold"), text_color=SNAP_BLUE).pack(pady=(18, 2))
+        ctk.CTkLabel(f, text=title, font=("Segoe UI", 11, "bold"), text_color=TEXT_DIM).pack(pady=(0, 18))
+
+    def _populate_friends(self):
         friends = sorted(self.profile.get("friends_list", []), key=lambda x: x.get("Display Name", "").lower())
-
-        for f in friends:
+        for i, f in enumerate(friends):
             row = ctk.CTkFrame(self.friends_scroll, fg_color=BG_CARD, corner_radius=8)
-            row.pack(fill="x", padx=5, pady=3)
-            display = f.get("Display Name", "Unknown")
-            user = f.get("Username", "")
-            ctk.CTkLabel(row, text=display, font=("Segoe UI", 13, "bold"), text_color=TEXT_MAIN, anchor="w").pack(side="left", padx=10, pady=8)
-            ctk.CTkLabel(row, text=f"@{user}", font=("Segoe UI", 12), text_color=TEXT_DIM, anchor="e").pack(side="right", padx=10)
+            row.grid(row=i, column=0, sticky="ew", padx=5, pady=2)
+            ctk.CTkLabel(row, text=f.get("Display Name", "Unknown"), font=("Segoe UI", 13, "bold"), text_color=TEXT_MAIN).pack(side="left", padx=15, pady=10)
+            ctk.CTkLabel(row, text=f"@{f.get('Username', '')}", font=("Segoe UI", 11), text_color=TEXT_DIM).pack(side="right", padx=15)
 
-    def _build_device_history(self):
-        # Header with Icon
-        header_frame = ctk.CTkFrame(self.col_history, fg_color="transparent")
-        header_frame.grid(row=0, column=0, sticky="ew", padx=15, pady=(15, 5))
-        
-        icon_phone = assets.load_icon("smartphone", size=(20, 20))
-        if icon_phone:
-            ctk.CTkLabel(header_frame, text="", image=icon_phone).pack(side="left", padx=(0, 8))
-            
-        ctk.CTkLabel(header_frame, text="Device History", font=("Segoe UI", 16, "bold"), text_color=TEXT_MAIN).pack(side="left")
-        
-        # List
-        self.device_scroll = self._create_list_container(self.col_history)
-        self.device_scroll.grid(row=1, column=0, sticky="nsew", padx=5, pady=(5, 10))
-
-        history = self.profile.get("device_history", [])
-        for dev in history:
-            row = ctk.CTkFrame(self.device_scroll, fg_color=BG_CARD, corner_radius=6)
-            row.pack(fill="x", padx=5, pady=2)
+    def _populate_device_history(self):
+        for i, dev in enumerate(self.profile.get("device_history", [])):
+            row = ctk.CTkFrame(self.device_scroll, fg_color=BG_CARD, corner_radius=8)
+            row.grid(row=i, column=0, sticky="ew", padx=5, pady=2)
             model = f"{dev.get('Make', '')} {dev.get('Model', '')}"
-            date = dev.get('Start Time', '')[:10]
-            ctk.CTkLabel(row, text=model, font=("Segoe UI", 13, "bold"), anchor="w", text_color=TEXT_MAIN).pack(side="left", padx=10, pady=5)
-            ctk.CTkLabel(row, text=date, font=("Segoe UI", 12), text_color=TEXT_DIM, anchor="e").pack(side="right", padx=10)
+            ctk.CTkLabel(row, text=model, font=("Segoe UI", 13, "bold"), text_color=TEXT_MAIN).pack(side="left", padx=15, pady=10)
+            ctk.CTkLabel(row, text=dev.get('Start Time', '')[:10], font=("Segoe UI", 11), text_color=TEXT_DIM).pack(side="right", padx=15)
 
-    def _build_name_history(self):
-        # Header with Icon
-        header_frame = ctk.CTkFrame(self.col_history, fg_color="transparent")
-        header_frame.grid(row=2, column=0, sticky="ew", padx=15, pady=(10, 5))
-        
-        icon_file = assets.load_icon("file-text", size=(20, 20))
-        if icon_file:
-            ctk.CTkLabel(header_frame, text="", image=icon_file).pack(side="left", padx=(0, 8))
-            
-        ctk.CTkLabel(header_frame, text="Identity Evolution", font=("Segoe UI", 16, "bold"), text_color=TEXT_MAIN).pack(side="left")
-        
-        # List
-        self.name_scroll = self._create_list_container(self.col_history)
-        self.name_scroll.grid(row=3, column=0, sticky="nsew", padx=5, pady=(5, 15))
-
-        history = self.profile.get("name_history", [])
-        for nc in history:
+    def _populate_name_history(self):
+        for i, nc in enumerate(self.profile.get("name_history", [])):
             row = ctk.CTkFrame(self.name_scroll, fg_color="transparent")
-            row.pack(fill="x", padx=5, pady=1)
-            name = nc.get('Display Name', '')
-            date = nc.get('Date', '')[:10]
-            ctk.CTkLabel(row, text=f"“{name}”", font=("Segoe UI", 13), anchor="w", text_color=TEXT_MAIN).pack(side="left")
-            ctk.CTkLabel(row, text=date, font=("Segoe UI", 12), text_color=TEXT_DIM, anchor="e").pack(side="right")
+            row.grid(row=i, column=0, sticky="ew", padx=10, pady=1)
+            ctk.CTkLabel(row, text=f"“{nc.get('Display Name', '')}”", font=("Segoe UI", 13), text_color=TEXT_MAIN).pack(side="left")
+            ctk.CTkLabel(row, text=nc.get('Date', '')[:10], font=("Segoe UI", 11), text_color=TEXT_DIM).pack(side="right")
 
-    def _build_travel_log(self):
-        # Header with Icon
-        header_frame = ctk.CTkFrame(self.col_travel, fg_color="transparent")
-        header_frame.grid(row=0, column=0, sticky="ew", padx=15, pady=(15, 5))
-        
-        icon_globe = assets.load_icon("globe", size=(20, 20))
-        if icon_globe:
-            ctk.CTkLabel(header_frame, text="", image=icon_globe).pack(side="left", padx=(0, 8))
-            
-        ctk.CTkLabel(header_frame, text="Travel Log", font=("Segoe UI", 16, "bold"), text_color=TEXT_MAIN).pack(side="left")
-        
-        # List
-        self.map_scroll = self._create_list_container(self.col_travel)
-        self.map_scroll.grid(row=1, column=0, sticky="nsew", padx=5, pady=(5, 5))
-        
-        for p in self.profile.get("places", []):
-            place_name = p.get("Place", "Unknown")
-            location = p.get("Place Location", "")
-            date = p.get("Date", "")[:10]
-            
+    def _populate_travel_log(self):
+        for i, p in enumerate(self.profile.get("places", [])):
             row = ctk.CTkFrame(self.map_scroll, fg_color="transparent")
-            row.pack(fill="x", padx=5, pady=4)
-            
-            date_lbl = ctk.CTkLabel(row, text=date, width=85, text_color=TEXT_DIM, font=("Segoe UI", 11), fg_color=BG_CARD, corner_radius=6)
-            date_lbl.pack(side="left", padx=(0, 10))
-            
+            row.grid(row=i, column=0, sticky="ew", padx=5, pady=4)
+            ctk.CTkLabel(row, text=p.get("Date", "")[:10], width=85, text_color=TEXT_DIM, font=("Segoe UI", 11, "bold"), fg_color=BG_CARD, corner_radius=6).pack(side="left", padx=(5, 12))
             txt_frame = ctk.CTkFrame(row, fg_color="transparent")
             txt_frame.pack(side="left", fill="x", expand=True)
-            
-            ctk.CTkLabel(txt_frame, text=place_name, text_color=TEXT_MAIN, anchor="w", font=("Segoe UI", 13, "bold")).pack(fill="x")
-            if location: ctk.CTkLabel(txt_frame, text=location, text_color=TEXT_DIM, anchor="w", font=("Segoe UI", 11)).pack(fill="x")
+            ctk.CTkLabel(txt_frame, text=p.get("Place", "Unknown"), text_color=TEXT_MAIN, anchor="w", font=("Segoe UI", 13, "bold")).pack(fill="x")
+            if p.get("Place Location"): ctk.CTkLabel(txt_frame, text=p.get("Place Location"), text_color=TEXT_DIM, anchor="w", font=("Segoe UI", 11)).pack(fill="x")
