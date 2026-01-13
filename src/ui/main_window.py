@@ -17,9 +17,9 @@ class MainWindow(ctk.CTk):
         self.data_manager = data_manager
         self.cfg = config_manager
         
-        # 1. SET THEME FIRST FROM CONFIG
+        # 1. LOAD THEME FROM CONFIG
         saved_mode = self.cfg.get("appearance_mode")
-        ctk.set_appearance_mode(saved_mode) 
+        ctk.set_appearance_mode(saved_mode)
         
         self.title("SnapCapsule")
         
@@ -37,8 +37,6 @@ class MainWindow(ctk.CTk):
         y_pos = (screen_h - default_h) // 2
         self.geometry(f"{default_w}x{default_h}+{x_pos}+{y_pos}")
         self.minsize(int(screen_w * 0.6), int(screen_h * 0.7))
-        
-        ctk.set_appearance_mode("Dark")
         
         self.chat_index, self.memories, self.profile = self.data_manager.reload()
         
@@ -150,8 +148,11 @@ class MainWindow(ctk.CTk):
     def show_profile_view(self):
         self._hide_all_views()
         self._update_active_tab("profile")
-        if self.view_profile: self.view_profile.destroy()
-        self.view_profile = ProfileView(self.content_frame, self.profile)
+        
+        # FIX: Check if view exists first. Only create once.
+        if not self.view_profile:
+            self.view_profile = ProfileView(self.content_frame, self.profile)
+        
         self.view_profile.grid(row=0, column=0, sticky="nsew")
 
     def show_memories_view(self):

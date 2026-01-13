@@ -30,7 +30,7 @@ class ConfigManager:
         self.config["data_root"] = data_root
         self.config["memories_path"] = memories_path
         
-        # Persistence for selection
+        # FIX: Explicitly update the dictionary before writing to file
         if appearance_mode:
             self.config["appearance_mode"] = appearance_mode
         
