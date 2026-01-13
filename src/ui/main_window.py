@@ -5,6 +5,7 @@ from ui.views.profile_view import ProfileView
 from ui.views.chat_view import ChatView
 from ui.views.memories_view import MemoriesView
 from ui.views.home_view import HomeView
+from ui.views.settings_view import SettingsView # New import
 from ui.theme import *
 from utils.assets import assets
 
@@ -18,7 +19,6 @@ class MainWindow(ctk.CTk):
         
         self.title("SnapCapsule")
         
-        # --- SET WINDOW ICON ---
         try:
             icon_path = assets.get_path("snapcapsule.ico")
             if os.path.exists(icon_path):
@@ -26,7 +26,6 @@ class MainWindow(ctk.CTk):
         except Exception as e:
             print(f"Warning: Could not set window icon: {e}")
 
-        # --- PROPORTIONAL MINIMUM SIZE ---
         screen_w = self.winfo_screenwidth()
         screen_h = self.winfo_screenheight()
         default_w, default_h = 1200, 800
@@ -43,6 +42,7 @@ class MainWindow(ctk.CTk):
         self.view_profile = None
         self.view_chat = None
         self.view_memories = None
+        self.view_settings = None # New view pointer
 
         self._setup_ui()
         
@@ -51,7 +51,6 @@ class MainWindow(ctk.CTk):
         self.bind_all("<Button-5>", self._on_global_mouse_wheel)
 
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
-
         self.show_home_view()
 
     def on_closing(self):
@@ -65,16 +64,17 @@ class MainWindow(ctk.CTk):
         self.grid_columnconfigure(1, weight=1) 
         self.grid_rowconfigure(0, weight=1)
 
+        # Sidebar container
         self.nav_frame = ctk.CTkFrame(self, fg_color=BG_SIDEBAR, corner_radius=0, width=80)
         self.nav_frame.grid(row=0, column=0, sticky="nsew")
         self.nav_frame.grid_propagate(False)
         
-        # --- APP LOGO ---
-        logo_img = assets.load_image("snapcapsule", size=(50, 50))
-        if logo_img:
-            ctk.CTkLabel(self.nav_frame, text="", image=logo_img).pack(pady=(25, 15))
-        else:
-            ctk.CTkLabel(self.nav_frame, text="👻", font=("Segoe UI", 30)).pack(pady=(20, 10))
+        # Grid layout for sidebar to allow bottom alignment
+        self.nav_frame.grid_rowconfigure(1, weight=1) # Spacer row
+        
+        # Top Nav Section
+        self.top_nav = ctk.CTkFrame(self.nav_frame, fg_color="transparent")
+        self.top_nav.grid(row=0, column=0, sticky="new", pady=15)
         
         self.nav_buttons = {}
         
@@ -86,16 +86,21 @@ class MainWindow(ctk.CTk):
         ]
 
         for text, cmd, key, icon_name in nav_items:
-            self._add_nav_btn(text, cmd, key, icon_name)
+            self._add_nav_btn(self.top_nav, text, cmd, key, icon_name)
+
+        # Bottom Nav Section (Settings)
+        self.bottom_nav = ctk.CTkFrame(self.nav_frame, fg_color="transparent")
+        self.bottom_nav.grid(row=2, column=0, sticky="sew", pady=15)
+        self._add_nav_btn(self.bottom_nav, "Settings", self.show_settings_view, "settings", "settings")
 
         self.content_frame = ctk.CTkFrame(self, fg_color=BG_MAIN, corner_radius=0)
         self.content_frame.grid(row=0, column=1, sticky="nsew")
         self.content_frame.grid_rowconfigure(0, weight=1)
         self.content_frame.grid_columnconfigure(0, weight=1)
 
-    def _add_nav_btn(self, text, cmd, key, icon_name):
+    def _add_nav_btn(self, parent, text, cmd, key, icon_name):
         icon = assets.load_icon(icon_name, size=(24, 24))
-        btn = ctk.CTkButton(self.nav_frame, 
+        btn = ctk.CTkButton(parent, 
                             text=text, 
                             image=icon,
                             compound="top",
@@ -106,7 +111,7 @@ class MainWindow(ctk.CTk):
                             text_color=TEXT_DIM,
                             command=cmd, 
                             font=("Segoe UI", 11, "bold"))
-        btn.pack(pady=10, padx=5)
+        btn.pack(pady=10, padx=10)
         self.nav_buttons[key] = btn
 
     def _update_active_tab(self, key):
@@ -119,7 +124,7 @@ class MainWindow(ctk.CTk):
     def _hide_all_views(self):
         if self.view_chat and self.view_chat.winfo_ismapped():
             self.view_chat.cleanup()
-        for view in [self.view_home, self.view_profile, self.view_chat, self.view_memories]:
+        for view in [self.view_home, self.view_profile, self.view_chat, self.view_memories, self.view_settings]:
             if view: view.grid_forget()
 
     def show_home_view(self):
@@ -127,18 +132,16 @@ class MainWindow(ctk.CTk):
         self._update_active_tab("home")
         if not self.view_home:
             self.view_home = HomeView(self.content_frame, self)
-            self.view_home.grid(row=0, column=0, sticky="nsew")
-        else: self.view_home.grid(row=0, column=0, sticky="nsew")
+        self.view_home.grid(row=0, column=0, sticky="nsew")
 
     def show_chats_view(self):
         self._hide_all_views()
         self._update_active_tab("chat")
         if not self.view_chat:
             self.view_chat = ChatView(self.content_frame, self.data_manager, self.profile)
-            self.view_chat.grid(row=0, column=0, sticky="nsew")
         else:
             self.view_chat.chat_list = self.chat_index 
-            self.view_chat.grid(row=0, column=0, sticky="nsew")
+        self.view_chat.grid(row=0, column=0, sticky="nsew")
 
     def show_profile_view(self):
         self._hide_all_views()
@@ -152,8 +155,14 @@ class MainWindow(ctk.CTk):
         self._update_active_tab("memories")
         if not self.view_memories:
             self.view_memories = MemoriesView(self.content_frame, self.memories)
-            self.view_memories.grid(row=0, column=0, sticky="nsew")
-        else: self.view_memories.grid(row=0, column=0, sticky="nsew")
+        self.view_memories.grid(row=0, column=0, sticky="nsew")
+
+    def show_settings_view(self):
+        self._hide_all_views()
+        self._update_active_tab("settings")
+        if not self.view_settings:
+            self.view_settings = SettingsView(self.content_frame, self.cfg)
+        self.view_settings.grid(row=0, column=0, sticky="nsew")
 
     def _on_global_mouse_wheel(self, event):
         x, y = self.winfo_pointerxy()
@@ -194,7 +203,5 @@ class MainWindow(ctk.CTk):
                      steps = 1 * SCROLL_SPEED
                 
                 if steps == 0: return
-
-                # CRITICAL FIX: Removed boundary checks to allow native handling
                 target._parent_canvas.yview_scroll(steps, "units")
             except: pass
