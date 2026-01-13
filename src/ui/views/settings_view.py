@@ -6,11 +6,10 @@ from ui.theme import *
 from utils.assets import assets
 
 class SettingsView(ctk.CTkFrame):
-    def __init__(self, parent, config_manager, data_manager): # Added data_manager
+    def __init__(self, parent, config_manager, data_manager):
         super().__init__(parent, fg_color="transparent")
         self.cfg = config_manager
         self.data_manager = data_manager
-        self.GUTTER = 15
         self._setup_ui()
 
     def _setup_ui(self):
@@ -21,130 +20,139 @@ class SettingsView(ctk.CTkFrame):
         container.grid(row=0, column=0, sticky="nsew", padx=20, pady=20)
         container.grid_columnconfigure(0, weight=1)
 
-        # Header
+        # --- HEADER AREA ---
         header_frame = ctk.CTkFrame(container, fg_color="transparent")
         header_frame.grid(row=0, column=0, sticky="ew", padx=20, pady=(20, 10))
         
         icon_settings = assets.load_icon("settings", size=(24, 24))
         ctk.CTkLabel(header_frame, text="", image=icon_settings).pack(side="left", padx=(0, 10))
-        ctk.CTkLabel(header_frame, text="Settings & Personalization", font=("Segoe UI", 20, "bold"), text_color=TEXT_MAIN).pack(side="left")
+        ctk.CTkLabel(header_frame, text="Settings & Management", font=("Segoe UI", 20, "bold"), text_color=TEXT_MAIN).pack(side="left")
 
-        # 1. Appearance Section
-        self._build_theme_section(container, 1)
+        # Top-Right Appearance Toggle
+        mode_switch = ctk.CTkSegmentedButton(header_frame, values=["Light", "Dark", "System"], 
+                                             command=self._change_appearance_mode, width=180)
+        mode_switch.set(self.cfg.get("appearance_mode"))
+        mode_switch.pack(side="right")
 
-        # 2. Data Integrity Section (NEW)
-        self._build_integrity_section(container, 2)
+        # --- SECTION 1: DATA HEALTH & INSIGHTS ---
+        # Bundles integrity audit and database status
+        self._build_health_section(container, 1)
 
-        # 3. Storage Sections
-        self._add_storage_card(container, 3, "Exported Data Root", 
-                               self.cfg.get("data_root"), 
-                               "The main directory containing your Snapchat JSON files and chat media.")
+        # --- SECTION 2: FILE SYSTEM LOCATIONS ---
+        self._build_locations_section(container, 2)
 
-        self._add_storage_card(container, 4, "Memories Storage", 
-                               self.cfg.get("memories_path"), 
-                               "The folder where your downloaded Snap Memories are stored.")
+        # --- SECTION 3: MAINTENANCE & SECURITY ---
+        self._build_maintenance_section(container, 3)
 
-        # 4. Cache Management Section
-        self._build_cache_section(container, 5)
-
-    def _build_integrity_section(self, parent, row):
+    def _build_health_section(self, parent, row):
         card = ctk.CTkFrame(parent, fg_color=BG_CARD, corner_radius=10)
         card.grid(row=row, column=0, sticky="ew", padx=20, pady=10)
         card.grid_columnconfigure((0, 1), weight=1)
 
-        ctk.CTkLabel(card, text="Data Integrity Audit", font=("Segoe UI", 14, "bold"), text_color=SNAP_BLUE).grid(row=0, column=0, columnspan=2, sticky="w", padx=15, pady=(15, 5))
+        ctk.CTkLabel(card, text="Data Health Dashboard", font=("Segoe UI", 14, "bold"), text_color=SNAP_BLUE).grid(row=0, column=0, columnspan=2, sticky="w", padx=15, pady=(15, 5))
         
-        # Run Check
+        # Integrity Stats
         report = self.data_manager.perform_integrity_check()
-        
-        self._integrity_stat(card, 1, 0, "Chat Media", report["chats"])
-        self._integrity_stat(card, 1, 1, "Memories", report["memories"])
+        self._integrity_stat(card, 1, 0, "Chat Media Status", report["chats"], "Images and videos referenced in conversations")
+        self._integrity_stat(card, 1, 1, "Memories Status", report["memories"], "Your archived Snap History gallery")
 
-        ctk.CTkLabel(card, text="This shows how much of your exported data is actually available as files on your computer.", 
-                     font=("Segoe UI", 11), text_color=TEXT_DIM, wraplength=700).grid(row=2, column=0, columnspan=2, sticky="w", padx=15, pady=(5, 15))
-
-    def _integrity_stat(self, parent, row, col, label, data):
+    def _integrity_stat(self, parent, row, col, label, data, detail):
         f = ctk.CTkFrame(parent, fg_color=BG_MAIN, corner_radius=8)
-        f.grid(row=row, column=col, padx=15, pady=5, sticky="ew")
+        f.grid(row=row, column=col, padx=10, pady=10, sticky="ew")
         
-        total = data["total"]
-        missing = data["missing"]
-        found = total - missing
-        percent = (found / total * 100) if total > 0 else 0
-        
+        found = data["total"] - data["missing"]
+        percent = (found / data["total"] * 100) if data["total"] > 0 else 0
         color = SNAP_RED if percent < 90 else SNAP_BLUE
 
-        ctk.CTkLabel(f, text=label, font=("Segoe UI", 12, "bold"), text_color=TEXT_MAIN).pack(pady=(10, 0))
-        ctk.CTkLabel(f, text=f"{found} / {total}", font=("Segoe UI", 18, "bold"), text_color=color).pack()
-        ctk.CTkLabel(f, text=f"{percent:.1f}% Linked", font=("Segoe UI", 11), text_color=TEXT_DIM).pack(pady=(0, 10))
+        ctk.CTkLabel(f, text=label, font=("Segoe UI", 11, "bold"), text_color=TEXT_MAIN).pack(pady=(8, 0))
+        ctk.CTkLabel(f, text=f"{found} / {data['total']}", font=("Segoe UI", 18, "bold"), text_color=color).pack()
+        ctk.CTkLabel(f, text=f"{percent:.1f}% Linked Successfully", font=("Segoe UI", 10), text_color=TEXT_DIM).pack()
+        ctk.CTkLabel(f, text=detail, font=("Segoe UI", 9), text_color=TEXT_DIM, wraplength=180).pack(pady=(5, 10))
+
+    def _build_locations_section(self, parent, row):
+        card = ctk.CTkFrame(parent, fg_color=BG_CARD, corner_radius=10)
+        card.grid(row=row, column=0, sticky="ew", padx=20, pady=10)
+        card.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(card, text="Data Sources", font=("Segoe UI", 14, "bold"), text_color=SNAP_BLUE).grid(row=0, column=0, sticky="w", padx=15, pady=(15, 5))
+
+        path_container = ctk.CTkFrame(card, fg_color="transparent")
+        path_container.grid(row=1, column=0, sticky="ew", padx=15, pady=(5, 15))
+
+        self._add_clickable_path(path_container, "Core Archive", self.cfg.get("data_root"), 
+                                 "Snapchat unzipped export containing JSON logs")
+        self._add_clickable_path(path_container, "Media Storage", self.cfg.get("memories_path"), 
+                                 "Local folder containing downloaded .mp4 and .jpg memories")
+
+    def _build_maintenance_section(self, parent, row):
+        card = ctk.CTkFrame(parent, fg_color=BG_CARD, corner_radius=10)
+        card.grid(row=row, column=0, sticky="ew", padx=20, pady=10)
+        card.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(card, text="Maintenance & Security", font=("Segoe UI", 14, "bold"), text_color=SNAP_BLUE).grid(row=0, column=0, sticky="w", padx=15, pady=(15, 10))
+
+        action_row = ctk.CTkFrame(card, fg_color=BG_MAIN, corner_radius=8)
+        action_row.grid(row=1, column=0, sticky="ew", padx=15, pady=5)
+        
+        cache_path = os.path.join(self.cfg.get("data_root"), "cache") if self.cfg.get("data_root") else ""
+        size_str = self._get_directory_size(cache_path)
+        
+        ctk.CTkLabel(action_row, text=f" Thumbnail Cache: {size_str}", image=assets.load_icon("image", size=(16, 16)),
+                     compound="left", font=("Segoe UI", 11, "bold"), text_color=TEXT_DIM).pack(side="left", padx=15, pady=15)
+        
+        btn_container = ctk.CTkFrame(action_row, fg_color="transparent")
+        btn_container.pack(side="right", padx=10)
+
+        ctk.CTkButton(btn_container, text="Clear Cache", width=100, height=28, fg_color=BG_CARD, hover_color=BG_HOVER,
+                      font=("Segoe UI", 11, "bold"), command=lambda: self._clear_cache(cache_path)).pack(side="left", padx=5)
+        
+        ctk.CTkButton(btn_container, text="Reset App", width=100, height=28, fg_color="#330000", hover_color="#550000",
+                      font=("Segoe UI", 11, "bold"), command=self._confirm_reset).pack(side="left", padx=5)
+
+        ctk.CTkLabel(card, text="🛡️ All data processing is strictly local. No data is sent to external servers.", 
+                     font=("Segoe UI", 11), text_color="#2ECC71").grid(row=2, column=0, sticky="w", padx=15, pady=(5, 15))
+
+    def _add_clickable_path(self, parent, label, path, detail):
+        row = ctk.CTkFrame(parent, fg_color="transparent")
+        row.pack(fill="x", pady=4)
+        
+        ctk.CTkLabel(row, text=f"{label}:", font=("Segoe UI", 12, "bold"), text_color=TEXT_MAIN).pack(side="left")
+        
+        display_text = path if path else "Not configured"
+        path_lbl = ctk.CTkLabel(row, text=display_text, font=("Consolas", 11), text_color=SNAP_BLUE, cursor="hand2")
+        path_lbl.pack(side="left", padx=5)
+        
+        ctk.CTkLabel(row, text=f"({detail})", font=("Segoe UI", 11), text_color=TEXT_DIM).pack(side="left")
+
+        if path and os.path.exists(path):
+            path_lbl.bind("<Button-1>", lambda e: self._open_folder(path))
 
     def _change_appearance_mode(self, new_mode):
         ctk.set_appearance_mode(new_mode)
         self.cfg.save_config(self.cfg.get("data_root"), self.cfg.get("memories_path"), appearance_mode=new_mode)
 
-    def _add_storage_card(self, parent, row, title, path, description):
-        card = ctk.CTkFrame(parent, fg_color=BG_CARD, corner_radius=10)
-        card.grid(row=row, column=0, sticky="ew", padx=20, pady=10)
-        card.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(card, text=title, font=("Segoe UI", 14, "bold"), text_color=SNAP_BLUE).grid(row=0, column=0, sticky="w", padx=15, pady=(15, 5))
-        path_row = ctk.CTkFrame(card, fg_color="transparent")
-        path_row.grid(row=1, column=0, sticky="ew", padx=15, pady=5)
-        path_row.grid_columnconfigure(0, weight=1)
-        path_box = ctk.CTkFrame(path_row, fg_color=BG_MAIN, corner_radius=6)
-        path_box.grid(row=0, column=0, sticky="ew", padx=(0, 10))
-        display_path = path if path else "Not configured"
-        ctk.CTkLabel(path_box, text=display_path, font=("Consolas", 11), text_color=TEXT_DIM, wraplength=600, justify="left").pack(padx=10, pady=5, anchor="w")
-        open_btn = ctk.CTkButton(path_row, text="Open", image=assets.load_icon("external-link", size=(16, 16)), width=80, height=32, fg_color=BG_SIDEBAR, hover_color=BG_HOVER, command=lambda p=path: self._open_folder(p))
-        open_btn.grid(row=0, column=1, sticky="e")
-        if not path or not os.path.exists(path): open_btn.configure(state="disabled")
-        ctk.CTkLabel(card, text=description, font=("Segoe UI", 11), text_color=TEXT_DIM, wraplength=750, justify="left").grid(row=2, column=0, sticky="w", padx=15, pady=(5, 15))
-
-    def _build_theme_section(self, parent, row):
-        card = ctk.CTkFrame(parent, fg_color=BG_CARD, corner_radius=10)
-        card.grid(row=row, column=0, sticky="ew", padx=20, pady=10)
-        card.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(card, text="Appearance", font=("Segoe UI", 14, "bold"), text_color=SNAP_BLUE).grid(row=0, column=0, sticky="w", padx=15, pady=(15, 5))
-        current_mode = self.cfg.get("appearance_mode")
-        mode_switch = ctk.CTkSegmentedButton(card, values=["Light", "Dark", "System"], command=self._change_appearance_mode)
-        mode_switch.set(current_mode)
-        mode_switch.grid(row=1, column=0, sticky="w", padx=15, pady=(5, 15))
-
-    def _build_cache_section(self, parent, row):
-        card = ctk.CTkFrame(parent, fg_color=BG_CARD, corner_radius=10)
-        card.grid(row=row, column=0, sticky="ew", padx=20, pady=10)
-        card.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(card, text="Application Cache", font=("Segoe UI", 14, "bold"), text_color=SNAP_BLUE).grid(row=0, column=0, sticky="w", padx=15, pady=(15, 5))
-        cache_path = os.path.join(self.cfg.get("data_root"), "cache") if self.cfg.get("data_root") else ""
-        size_str = self._get_directory_size(cache_path)
-        info_row = ctk.CTkFrame(card, fg_color="transparent")
-        info_row.grid(row=1, column=0, sticky="ew", padx=15, pady=5)
-        ctk.CTkLabel(info_row, text=f"Current Size: {size_str}", font=("Segoe UI", 12, "bold"), text_color=TEXT_MAIN).pack(side="left")
-        ctk.CTkButton(info_row, text="Clear Cache", width=100, height=32, fg_color="#330000", hover_color="#550000", command=lambda: self._clear_cache(cache_path)).pack(side="right")
-        ctk.CTkLabel(card, text="Clearing the cache will delete video thumbnails. They will be re-generated automatically.", font=("Segoe UI", 11), text_color=TEXT_DIM, wraplength=700, justify="left").grid(row=2, column=0, sticky="w", padx=15, pady=(5, 15))
+    def _confirm_reset(self):
+        if os.path.exists("config.json"):
+            os.remove("config.json")
+            self.winfo_toplevel().destroy()
+            os._exit(0)
 
     def _get_directory_size(self, path):
         if not path or not os.path.exists(path): return "0 bytes"
-        total_size = 0
-        try:
-            for dirpath, dirnames, filenames in os.walk(path):
-                for f in filenames: total_size += os.path.getsize(os.path.join(dirpath, f))
-        except: return "Error"
-        for unit in ['bytes', 'KB', 'MB', 'GB']:
-            if total_size < 1024: return f"{total_size:.1f} {unit}"
-            total_size /= 1024
-        return f"{total_size:.1f} TB"
+        total = 0
+        for dirpath, _, filenames in os.walk(path):
+            for f in filenames: total += os.path.getsize(os.path.join(dirpath, f))
+        for unit in ['B', 'KB', 'MB', 'GB']:
+            if total < 1024: return f"{total:.1f} {unit}"
+            total /= 1024
+        return f"{total:.1f} TB"
 
     def _clear_cache(self, path):
-        if not path or not os.path.exists(path): return
-        try:
+        if path and os.path.exists(path):
             shutil.rmtree(path)
-            self._setup_ui() 
-        except: pass
+            self._setup_ui()
 
     def _open_folder(self, path):
-        if not path or not os.path.exists(path): return
-        try:
-            norm_path = os.path.normpath(path)
-            if os.name == 'nt': os.startfile(norm_path)
-            else: webbrowser.open(f"file://{norm_path}")
-        except: pass
+        norm_path = os.path.normpath(path)
+        if os.name == 'nt': os.startfile(norm_path)
+        else: webbrowser.open(f"file://{norm_path}")
