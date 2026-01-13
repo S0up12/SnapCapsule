@@ -275,10 +275,23 @@ class ChatView(ctk.CTkFrame):
         GlobalMediaPlayer(self, playlist, idx)
 
     def update_search(self, event=None):
-        q = self.search_entry.get().lower()
-        if not q: self.populate_friends(self.chat_list)
+        """Dynamic search that checks if the query is contained anywhere in the name."""
+        query = self.search_entry.get().strip().lower()
+        
+        if not query:
+            # If search is empty, show original full list (first 100)
+            self.populate_friends(self.chat_list)
         else:
-            filtered = [n for n in self.chat_list if q in n.lower()]
+            # Filter based on whether the query exists ANYWHERE in the display name or username
+            filtered = []
+            for key in self.chat_list:
+                info = self.friend_map.get(key, {})
+                display = info.get("display", "").lower()
+                username = info.get("username", "").lower()
+                
+                if query in display or query in username:
+                    filtered.append(key)
+            
             self.populate_friends(filtered)
 
     def populate_friends(self, chat_keys):
