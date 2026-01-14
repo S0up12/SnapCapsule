@@ -4,6 +4,9 @@ import sys
 from PIL import Image, ImageDraw, ImageOps
 from utils.cache_manager import cache
 from contextlib import contextmanager
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 # Context manager to suppress C-level stderr (OpenCV noise)
 @contextmanager
@@ -38,8 +41,8 @@ def composite_snap_image(base_path, overlay_path):
             
         combined = Image.alpha_composite(base, overlay)
         return combined.convert("RGB")
-    except Exception as e:
-        print(f"Error compositing image: {e}")
+    except Exception:
+        logger.warning("Image compositing failed for %s", base_path, exc_info=True)
         return Image.open(base_path) if os.path.exists(base_path) else None
 
 def extract_video_thumbnail(video_path):
@@ -62,7 +65,8 @@ def extract_video_thumbnail(video_path):
             pil_img.thumbnail((300, 300))
             cache.save(video_path, pil_img)
             return pil_img
-        except: pass
+        except Exception:
+            logger.debug("Fallback image open failed for %s", img_fallback, exc_info=True)
 
     # STEP 2: Fast Fail
     try:
@@ -80,7 +84,7 @@ def extract_video_thumbnail(video_path):
         try:
             with suppress_stderr():
                 cap = cv2.VideoCapture(video_path, cv2.CAP_FFMPEG) #
-        except:
+        except Exception:
             cap = cv2.VideoCapture(video_path, cv2.CAP_FFMPEG) #
 
         if cap and cap.isOpened():
@@ -89,7 +93,7 @@ def extract_video_thumbnail(video_path):
                 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) #
                 extracted_img = Image.fromarray(frame_rgb) #
     except Exception:
-        pass
+        logger.debug("Video thumbnail extraction failed for %s", video_path, exc_info=True)
     finally:
         if cap: cap.release() #
         
@@ -126,4 +130,5 @@ def add_play_icon(pil_img):
         return Image.alpha_composite(img, overlay).convert("RGB") #
 
     except Exception:
+        logger.debug("Play icon overlay failed.", exc_info=True)
         return pil_img #

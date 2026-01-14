@@ -8,6 +8,9 @@ from ui.views.home_view import HomeView
 from ui.views.settings_view import SettingsView # New import
 from ui.theme import *
 from utils.assets import assets
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 SCROLL_SPEED = 20
 
@@ -28,7 +31,7 @@ class MainWindow(ctk.CTk):
             if os.path.exists(icon_path):
                 self.iconbitmap(icon_path)
         except Exception as e:
-            print(f"Warning: Could not set window icon: {e}")
+            logger.warning("Could not set window icon", exc_info=True)
 
         screen_w = self.winfo_screenwidth()
         screen_h = self.winfo_screenheight()
@@ -56,7 +59,7 @@ class MainWindow(ctk.CTk):
         self.show_home_view()
 
     def on_closing(self):
-        print("🛑 Shutting down...")
+        logger.info("Shutting down...")
         if self.view_chat: self.view_chat.cleanup()
         self.destroy()
         os._exit(0)
@@ -210,4 +213,5 @@ class MainWindow(ctk.CTk):
                 
                 if steps == 0: return
                 target._parent_canvas.yview_scroll(steps, "units")
-            except: pass
+            except Exception:
+                logger.debug("Global mouse wheel scroll failed", exc_info=True)

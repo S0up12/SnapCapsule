@@ -1,6 +1,9 @@
 import json
 import os
 from datetime import datetime
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 class DataManager:
     def __init__(self, config_manager):
@@ -25,6 +28,7 @@ class DataManager:
         self.root = self.cfg.get("data_root")
         
         if not self.root or not os.path.exists(self.root):
+            logger.info("Data root not configured or missing: %s", self.root)
             return [], [], {}
 
         self.json_path = os.path.join(self.root, "json", "chat_history.json")
@@ -32,24 +36,24 @@ class DataManager:
         
         # 1. Index Media (Fast)
         if os.path.exists(self.chat_media_path):
-            print(f"⏳ Indexing Chat Media...")
+            logger.info("Indexing chat media")
             self._index_media(self.chat_media_path)
         
         # 2. Load Raw JSON (Fast I/O) - Do NOT process messages yet
         if os.path.exists(self.json_path):
-            print("⏳ Loading Chat JSON...")
+            logger.info("Loading chat JSON from %s", self.json_path)
             try:
                 with open(self.json_path, "r", encoding="utf-8") as f:
                     self.raw_chats = json.load(f)
-                self.chat_index = sorted(list(self.raw_chats.keys()))
-            except Exception as e:
-                print(f"❌ JSON Load Error: {e}")
+                self.chat_index = sorted(self.raw_chats)
+            except Exception:
+                logger.error("Chat JSON load failed for %s", self.json_path, exc_info=True)
         
         # 3. Memories & Profile
-        print("⏳ Parsing Memories...")
+        logger.info("Parsing memories history")
         self._parse_memories_list()
 
-        print("⏳ Parsing Profile Data...")
+        logger.info("Parsing profile data")
         self._parse_profile_data()
 
         mem_path = self.cfg.get("memories_path")
@@ -93,8 +97,8 @@ class DataManager:
                     # Fallback for ISO format
                     dt = datetime.fromisoformat(date_str)
                     nice_date = dt.strftime("%Y-%m-%d %H:%M")
-            except: 
-                pass
+            except Exception:
+                logger.debug("Date parse failed for %s", date_str, exc_info=True)
 
             clean_msgs.append({
                 "sender": msg.get("From", "Unknown"), 
@@ -121,7 +125,9 @@ class DataManager:
                             if len(parts) > 1:
                                 media_id = os.path.splitext(parts[1])[0]
                                 self.media_map[media_id] = entry.path
-                        except: continue
+                        except Exception:
+                            logger.debug("Media ID parse failed for %s", filename, exc_info=True)
+                            continue
 
     def _parse_memories_list(self):
         mem_json = os.path.join(self.root, "json", "memories_history.json")
@@ -131,16 +137,19 @@ class DataManager:
             with open(mem_json, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 raw_list = data.get("Saved Media", [])
-        except: return
+        except Exception:
+            logger.error("Memories JSON load failed for %s", mem_json, exc_info=True)
+            return
 
-        self.memories = []
-        for item in raw_list:
-            self.memories.append({
+        self.memories = [
+            {
                 "date": item.get("Date", ""),
                 "type": item.get("Media Type", ""),
-                "path": None, 
-                "url": item.get("Media Download Url", "")
-            })
+                "path": None,
+                "url": item.get("Media Download Url", ""),
+            }
+            for item in raw_list
+        ]
 
     def _link_memories(self, folder_path):
         if not os.path.exists(folder_path): return
@@ -165,7 +174,8 @@ class DataManager:
                     
                     if prefix in file_index:
                         mem['path'] = file_index[prefix]
-            except: pass
+            except Exception:
+                logger.debug("Memory link failed for %s", mem.get("date", ""), exc_info=True)
 
     def _parse_profile_data(self):
         json_dir = os.path.join(self.root, "json")
@@ -176,7 +186,9 @@ class DataManager:
                 try:
                     with open(p, "r", encoding="utf-8") as f:
                         return json.load(f).get(key, [])
-                except: return []
+                except Exception:
+                    logger.debug("Profile JSON load failed for %s", p, exc_info=True)
+                    return []
             return []
 
         # 1. Basic Account Info
@@ -187,7 +199,8 @@ class DataManager:
                     acc = json.load(f)
                     self.profile['basic'] = acc.get("Basic Information", {})
                     self.profile['device_history'] = acc.get("Device History", [])
-            except: pass
+            except Exception:
+                logger.debug("Account JSON load failed for %s", acc_path, exc_info=True)
 
         # 2. Account History
         self.profile['name_history'] = load_safe("account_history.json", "Display Name Change")
@@ -204,7 +217,8 @@ class DataManager:
                         "deleted": len(fr.get("Deleted Friends", [])),
                         "blocked": len(fr.get("Blocked Users", []))
                     }
-            except: pass
+            except Exception:
+                logger.debug("Friends JSON load failed for %s", friends_path, exc_info=True)
 
         # 4. Engagement
         user_prof_path = os.path.join(json_dir, "user_profile.json")
@@ -217,7 +231,8 @@ class DataManager:
                         self.profile['engagement'] = {item["Event"]: item["Occurrences"] for item in eng if "Event" in item}
                     else:
                         self.profile['engagement'] = {}
-            except: pass
+            except Exception:
+                logger.debug("Engagement JSON load failed for %s", user_prof_path, exc_info=True)
 
         # 5. Travel
         self.profile['places'] = load_safe("snap_map_places_history.json", "Snap Map Places History")[:100]

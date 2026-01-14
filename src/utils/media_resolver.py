@@ -1,5 +1,8 @@
 import os
 from PIL import Image
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 class MediaResolver:
     @staticmethod
@@ -18,21 +21,30 @@ class MediaResolver:
 
         # Logic: If both base image and caption exist, overlay them
         if os.path.exists(img_path) and os.path.exists(cap_path):
-            base = Image.open(img_path).convert("RGBA")
-            overlay = Image.open(cap_path).convert("RGBA")
-            
-            # Ensure overlay matches base size
-            if overlay.size != base.size:
-                overlay = overlay.resize(base.size, Image.Resampling.LANCZOS)
+            try:
+                base = Image.open(img_path).convert("RGBA")
+                overlay = Image.open(cap_path).convert("RGBA")
                 
-            return Image.alpha_composite(base, overlay).convert("RGB")
+                # Ensure overlay matches base size
+                if overlay.size != base.size:
+                    overlay = overlay.resize(base.size, Image.Resampling.LANCZOS)
+                    
+                return Image.alpha_composite(base, overlay).convert("RGB")
+            except Exception:
+                logger.debug("Composite failed for %s", base_path, exc_info=True)
             
         # Fallback to the '_image' variant if it exists alone
         if os.path.exists(img_path):
-            return Image.open(img_path)
+            try:
+                return Image.open(img_path)
+            except Exception:
+                logger.debug("Image variant load failed for %s", img_path, exc_info=True)
 
         # Final fallback to the original linked path (which might be the corrupt one)
         if os.path.exists(base_path):
-            return Image.open(base_path)
+            try:
+                return Image.open(base_path)
+            except Exception:
+                logger.debug("Image load failed for %s", base_path, exc_info=True)
             
         return None

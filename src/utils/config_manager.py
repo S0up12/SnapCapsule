@@ -1,5 +1,8 @@
 import json
 import os
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 CONFIG_FILE = "config.json"
 
@@ -23,7 +26,8 @@ class ConfigManager:
                     for key in DEFAULT_CONFIG:
                         if key in loaded:
                             self.config[key] = loaded[key]
-            except:
+            except Exception:
+                logger.warning("Failed to load config from %s; using defaults.", CONFIG_FILE, exc_info=True)
                 self.config = DEFAULT_CONFIG.copy()
 
     def save_config(self, data_root, memories_path, appearance_mode=None):

@@ -5,6 +5,9 @@ import shutil
 import concurrent.futures
 import time
 from datetime import datetime
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 class MemoryDownloader:
     def __init__(self, status_callback, progress_callback):
@@ -24,6 +27,7 @@ class MemoryDownloader:
         # 1. Validation
         if not os.path.exists(json_path):
             self.status_callback("❌ JSON file not found.")
+            logger.warning("Memories JSON not found at %s", json_path)
             return
 
         try:
@@ -31,8 +35,9 @@ class MemoryDownloader:
                 data = json.load(f)
             # Handle list vs dict structure
             memories = data.get("Saved Media", []) if isinstance(data, dict) else data
-        except Exception as e:
-            self.status_callback(f"❌ JSON Error: {e}")
+        except Exception as exc:
+            self.status_callback(f"❌ JSON Error: {exc}")
+            logger.error("Failed to parse memories JSON at %s", json_path, exc_info=True)
             return
 
         total_files = len(memories)
@@ -44,8 +49,9 @@ class MemoryDownloader:
         if not os.path.exists(download_folder):
             try:
                 os.makedirs(download_folder)
-            except:
+            except Exception:
                 self.status_callback("❌ Invalid Download Folder.")
+                logger.warning("Invalid download folder: %s", download_folder, exc_info=True)
                 return
 
         # 2. Disk Space Check
@@ -61,6 +67,12 @@ class MemoryDownloader:
             free_mb = free // (1024 * 1024)
             req_mb = est_size // (1024 * 1024)
             self.status_callback(f"⚠️ Low Disk Space! Free: {free_mb}MB, Est. Need: {req_mb}MB")
+            logger.warning(
+                "Low disk space for downloads at %s (free=%sMB, needed=%sMB)",
+                download_folder,
+                free_mb,
+                req_mb,
+            )
             return # Stop execution
 
         # 3. Start Download
@@ -81,12 +93,14 @@ class MemoryDownloader:
                     break
                 
                 try:
+                    item = futures[future]
                     result = future.result()
                     if result == "success": success += 1
                     elif result == "skipped": skipped += 1
                     else: failed += 1
                 except Exception:
                     failed += 1
+                    logger.debug("Download worker failed for item: %s", item, exc_info=True)
                 
                 # Update UI
                 progress = (i + 1) / total_files
@@ -124,6 +138,7 @@ class MemoryDownloader:
                 return "skipped"
 
             # RETRY LOGIC (Max 3 attempts)
+            last_error = None
             for attempt in range(3):
                 if self.cancelled: return "cancelled"
                 
@@ -133,14 +148,19 @@ class MemoryDownloader:
                             with open(filepath, 'wb') as f:
                                 shutil.copyfileobj(r.raw, f)
                             return "success"
-                except Exception:
-                    pass # Network error, try again
+                        last_error = f"HTTP {r.status_code}"
+                except Exception as exc:
+                    last_error = str(exc) or "Network error"
+                    logger.debug("Download attempt failed for %s", url, exc_info=True)
                 
                 # Wait before retry (0.5s, 1.0s, etc if desired)
                 time.sleep(1)
 
             # If loop finishes without success
+            if last_error:
+                logger.warning("Download failed for %s (%s)", url, last_error)
             return "failed"
                     
         except Exception:
+            logger.error("Download failed for %s", url, exc_info=True)
             return "failed"

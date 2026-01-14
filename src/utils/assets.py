@@ -4,6 +4,9 @@ import io
 import fitz  # PyMuPDF
 from PIL import Image, ImageDraw
 import customtkinter as ctk
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 class AssetManager:
     _instance = None
@@ -55,8 +58,8 @@ class AssetManager:
                 img = Image.frombytes("RGBA", [pix.width, pix.height], pix.samples)
                 return img
                 
-        except Exception as e:
-            print(f"[Warning] SVG Render Failed ({os.path.basename(path)}): {e}")
+        except Exception:
+            logger.warning("SVG render failed for %s", os.path.basename(path), exc_info=True)
             return None
 
     def _create_fallback_icon(self, size, color_fill):
@@ -84,7 +87,8 @@ class AssetManager:
                 try:
                     pil_img = Image.open(path).convert("RGBA")
                     pil_img = pil_img.resize(size, Image.Resampling.LANCZOS)
-                except: pass
+                except Exception:
+                    logger.debug("Image load failed for %s", path, exc_info=True)
 
         if not pil_img:
             pil_img = self._create_fallback_icon(size, (150, 150, 150))
@@ -112,7 +116,8 @@ class AssetManager:
                 try:
                     pil_base = Image.open(path).convert("RGBA")
                     pil_base = pil_base.resize(size, Image.Resampling.LANCZOS)
-                except: pass
+                except Exception:
+                    logger.debug("Icon load failed for %s", path, exc_info=True)
 
         if pil_base:
             try:
@@ -127,8 +132,8 @@ class AssetManager:
                     Image.new("L", pil_base.size, 255),
                     alpha
                 ))
-            except Exception as e:
-                print(f"[Error] Icon Theme Gen ({name}): {e}")
+            except Exception:
+                logger.error("Icon theme generation failed for %s", name, exc_info=True)
                 pil_black = self._create_fallback_icon(size, "black")
                 pil_white = self._create_fallback_icon(size, "white")
         else:

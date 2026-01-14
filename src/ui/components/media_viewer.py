@@ -5,13 +5,16 @@ import os
 import time  # <--- CRITICAL FIX
 from ui.theme import *
 from utils.assets import assets
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 try:
     from ffpyplayer.player import MediaPlayer
     AUDIO_AVAILABLE = True
 except ImportError:
     AUDIO_AVAILABLE = False
-    print("⚠️ 'ffpyplayer' not found. Audio disabled.")
+    logger.warning("ffpyplayer not found. Audio disabled.")
 
 class GlobalMediaPlayer(ctk.CTkFrame):
     active_instance = None
@@ -45,7 +48,8 @@ class GlobalMediaPlayer(ctk.CTkFrame):
             root.bind("<Left>", self.prev_media)
             root.bind("<Right>", self.next_media)
             root.bind("<space>", lambda e: self.toggle_play())
-        except: pass
+        except Exception:
+            logger.debug("Media player key bindings failed", exc_info=True)
         
         self.after(50, self._load_media)
 
@@ -145,17 +149,22 @@ class GlobalMediaPlayer(ctk.CTkFrame):
                     overlay = overlay.resize(base.size, Image.Resampling.LANCZOS)
                 
                 return Image.alpha_composite(base, overlay).convert("RGB")
-            except: pass
+            except Exception:
+                logger.debug("Image overlay failed for %s", original_path, exc_info=True)
 
         # Case 2: Only the '_image' variant exists
         if os.path.exists(img_variant):
-            try: return Image.open(img_variant)
-            except: pass
+            try:
+                return Image.open(img_variant)
+            except Exception:
+                logger.debug("Image variant load failed for %s", img_variant, exc_info=True)
 
         # Case 3: Fallback to the original path
         if os.path.exists(original_path):
-            try: return Image.open(original_path)
-            except: pass
+            try:
+                return Image.open(original_path)
+            except Exception:
+                logger.debug("Image load failed for %s", original_path, exc_info=True)
 
         return None
 
@@ -167,7 +176,8 @@ class GlobalMediaPlayer(ctk.CTkFrame):
             try:
                 self.player.toggle_pause()
                 self.player.close_player()
-            except: pass
+            except Exception:
+                logger.debug("Media player cleanup failed", exc_info=True)
             self.player = None
         self.cap = None
         self.is_audio_only = False
@@ -198,8 +208,8 @@ class GlobalMediaPlayer(ctk.CTkFrame):
                 self._probe_and_load_video()
             else:
                 self._show_error_state("⚠️ File Corrupt or Empty")
-        except Exception as e:
-            print(f"[ERROR] Media Load Failed: {e}")
+        except Exception:
+            logger.error("Media load failed for %s", self.file_path, exc_info=True)
             self._show_error_state("⚠️ Playback Failed")
 
     def _is_file_safe(self):
@@ -213,7 +223,9 @@ class GlobalMediaPlayer(ctk.CTkFrame):
             size = meta.get('src_vid_size', (0,0))
             if dur is None and size == (0,0): return False
             return True
-        except: return False
+        except Exception:
+            logger.debug("Media safety probe failed for %s", self.file_path, exc_info=True)
+            return False
 
     def _show_error_state(self, message):
         icon = assets.load_icon("alert-triangle", size=(64, 64))
@@ -230,7 +242,8 @@ class GlobalMediaPlayer(ctk.CTkFrame):
                 if meta and meta.get('src_vid_size') and meta['src_vid_size'][0] > 0:
                     is_video = True
                 probe.close_player()
-            except: pass
+            except Exception:
+                logger.debug("Media probe failed for %s", self.file_path, exc_info=True)
         if is_video: self._setup_video_mode()
         else: self._setup_audio_mode()
 
@@ -248,7 +261,9 @@ class GlobalMediaPlayer(ctk.CTkFrame):
             ctk_img = ctk.CTkImage(light_image=img, dark_image=img, size=img.size)
             self.lbl_media.configure(image=ctk_img, text="")
             self.lbl_media.image = ctk_img
-        except: self._show_error_state("Invalid Image")
+        except Exception:
+            logger.warning("Image display failed for %s", self.file_path, exc_info=True)
+            self._show_error_state("Invalid Image")
 
     def _setup_video_mode(self):
         try:
@@ -262,7 +277,9 @@ class GlobalMediaPlayer(ctk.CTkFrame):
             self.playing = True
             self.btn_play.configure(image=self.icon_pause)
             self.update_video_frame()
-        except: self._show_error_state("Video Error")
+        except Exception:
+            logger.warning("Video setup failed for %s", self.file_path, exc_info=True)
+            self._show_error_state("Video Error")
 
     def _setup_audio_mode(self):
         self.is_audio_only = True
@@ -278,7 +295,9 @@ class GlobalMediaPlayer(ctk.CTkFrame):
                 self.playing = True
                 self.btn_play.configure(image=self.icon_pause)
                 self.update_audio_frame()
-            except: self._show_error_state("Audio Error")
+            except Exception:
+                logger.warning("Audio setup failed for %s", self.file_path, exc_info=True)
+                self._show_error_state("Audio Error")
         else: self.lbl_media.configure(text="Audio Library Missing")
 
     def update_video_frame(self):
@@ -302,7 +321,9 @@ class GlobalMediaPlayer(ctk.CTkFrame):
                 self.job_id = self.after(int(1000/self.fps), self.update_video_frame)
             else:
                 self.on_seek(0); self.playing = True; self.update_video_frame()
-        except: self.playing = False
+        except Exception:
+            logger.debug("Video frame update failed", exc_info=True)
+            self.playing = False
 
     def update_audio_frame(self):
         if not self.playing or not self.player: return
@@ -344,20 +365,27 @@ class GlobalMediaPlayer(ctk.CTkFrame):
         if self.player: self.player.set_volume(float(val)/100)
 
     def _update_time(self, seconds):
-        try: self.lbl_time.configure(text=f"{int(seconds)//60:02}:{int(seconds)%60:02} / {int(self.duration)//60:02}:{int(self.duration)%60:02}")
-        except: pass
+        try:
+            self.lbl_time.configure(
+                text=f"{int(seconds)//60:02}:{int(seconds)%60:02} / {int(self.duration)//60:02}:{int(self.duration)%60:02}"
+            )
+        except Exception:
+            logger.debug("Time update failed", exc_info=True)
 
     def open_system(self):
         if os.path.exists(self.file_path): 
-            try: os.startfile(self.file_path)
-            except Exception as e: print(f"System open failed: {e}")
+            try:
+                os.startfile(self.file_path)
+            except Exception:
+                logger.warning("System open failed for %s", self.file_path, exc_info=True)
 
     def close_viewer(self):
         self._reset_player()
         try:
             root = self.winfo_toplevel()
             root.unbind("<Left>"); root.unbind("<Right>"); root.unbind("<space>")
-        except: pass
+        except Exception:
+            logger.debug("Media viewer close cleanup failed", exc_info=True)
         GlobalMediaPlayer.active_instance = None
         self.destroy()
 

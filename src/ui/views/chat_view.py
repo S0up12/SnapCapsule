@@ -9,6 +9,9 @@ from utils.image_utils import extract_video_thumbnail, add_play_icon
 from ui.theme import *
 from ui.components.media_viewer import GlobalMediaPlayer
 from utils.assets import assets
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 class SidebarChatButton(ctk.CTkFrame):
     def __init__(self, parent, display_name, username, command):
@@ -74,7 +77,8 @@ class ChatBubble(ctk.CTkFrame):
         try:
             dt = datetime.strptime(message['date'], "%Y-%m-%d %H:%M")
             time_str = dt.strftime("%H:%M")
-        except: time_str = ""
+        except Exception:
+            time_str = ""
         self.time_lbl = ctk.CTkLabel(body_frame, text=time_str, font=("Segoe UI", 10), text_color="#555555")
         
         for w in [self, body_frame, self.content_container]:
@@ -124,7 +128,8 @@ class ChatBubble(ctk.CTkFrame):
                     btn_widget.after(0, lambda: self._apply_image_main_thread(btn_widget, pil_img, path))
                 else:
                     btn_widget.after(0, lambda: self._apply_error_main_thread(btn_widget, is_video, path))
-        except: pass
+        except Exception:
+            logger.debug("Media preview load failed for %s", path, exc_info=True)
 
     def _apply_image_main_thread(self, btn, pil_img, path):
         if not btn.winfo_exists(): return
@@ -185,7 +190,8 @@ class ChatView(ctk.CTkFrame):
                     self.trigger_load_older()
                 elif bottom > 0.95 and self.view_end < self.total_msgs:
                     self.load_newer()
-            except: pass
+            except Exception:
+                pass
             
         self.after(200, self._monitor_scroll)
 
@@ -394,7 +400,8 @@ class ChatView(ctk.CTkFrame):
             if hasattr(widget, 'msg_id'): return widget.msg_id
             for w in children:
                 if hasattr(w, 'msg_id'): return w.msg_id
-        except: pass
+        except Exception:
+            pass
         return None
 
     def render_window(self, target_anchor=None):
@@ -420,7 +427,8 @@ class ChatView(ctk.CTkFrame):
                 try:
                     date_obj = datetime.strptime(d, "%Y-%m-%d")
                     txt = date_obj.strftime("%B %d").upper()
-                except: txt = d
+                except Exception:
+                    txt = d
                 ctk.CTkLabel(f, text=txt, font=("Segoe UI", 10, "bold"), text_color="#666").pack()
                 last_date = d
                 # Reset combining on new date
@@ -457,7 +465,8 @@ class ChatView(ctk.CTkFrame):
         if target_anchor == "bottom":
             def complete_load():
                 try: self.scroll_chat._parent_canvas.yview_moveto(1.0)
-                except: pass
+                except Exception:
+                    pass
                 # Lift Curtain Here
                 self.initial_loader.place_forget()
                 self._finish_rendering()
@@ -469,7 +478,8 @@ class ChatView(ctk.CTkFrame):
                 scroll_h = self.scroll_chat._parent_canvas.bbox("all")[3]
                 fraction = widget_y / scroll_h
                 self.scroll_chat._parent_canvas.yview_moveto(fraction)
-            except: pass
+            except Exception:
+                pass
             self._finish_rendering()
         else:
             self._finish_rendering()

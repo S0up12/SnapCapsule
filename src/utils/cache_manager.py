@@ -1,6 +1,9 @@
 import os
 import hashlib
 from PIL import Image
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 class ThumbnailCache:
     _instance = None
@@ -18,7 +21,7 @@ class ThumbnailCache:
         if not os.path.exists(self.cache_dir):
             os.makedirs(self.cache_dir, exist_ok=True)
             
-        print(f"[DEBUG] Cache initialized at: {self.cache_dir}")
+        logger.debug("Cache initialized at: %s", self.cache_dir)
         self.initialized = True
 
     def get(self, video_path):
@@ -30,7 +33,8 @@ class ThumbnailCache:
             try:
                 # We return the image so it can be used immediately
                 return Image.open(thumb_path)
-            except:
+            except Exception:
+                logger.debug("Thumbnail cache read failed for %s", thumb_path, exc_info=True)
                 return None
         return None
 
@@ -42,8 +46,8 @@ class ThumbnailCache:
             thumb_path = self._get_path(video_path)
             # Optimize: Convert to RGB and save as optimized JPEG
             pil_img.convert("RGB").save(thumb_path, "JPEG", quality=60, optimize=True)
-        except Exception as e:
-            print(f"[ERROR] Cache save failed: {e}")
+        except Exception:
+            logger.error("Thumbnail cache save failed for %s", video_path, exc_info=True)
 
     def _get_path(self, video_path):
         # --- THE FIX IS HERE ---

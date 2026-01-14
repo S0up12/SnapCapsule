@@ -6,6 +6,9 @@ from tkinter import filedialog
 from utils.downloader import MemoryDownloader
 from ui.theme import *
 from utils.assets import assets
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 class HomeView(ctk.CTkFrame):
     def __init__(self, parent, main_app):
@@ -125,7 +128,8 @@ class HomeView(ctk.CTkFrame):
                     ctk.CTkButton(parent, text=f" {label_text}", image=icon_link, compound="left", 
                                   height=30, fg_color=BG_CARD, hover_color=BG_HOVER, text_color=SNAP_BLUE,
                                   command=lambda u=url: webbrowser.open(u)).pack(anchor="w", padx=20, pady=5)
-                except: pass
+                except Exception:
+                    logger.debug("Failed to render markdown button line: %s", line, exc_info=True)
             else:
                 font = ("Segoe UI", 13)
                 if "**" in line:
@@ -272,4 +276,4 @@ class HomeView(ctk.CTkFrame):
             self.app.view_profile.destroy()
             self.app.view_profile = None
             
-        print("✅ Configuration Saved & Data Reloaded")
+        logger.info("Configuration saved and data reloaded")

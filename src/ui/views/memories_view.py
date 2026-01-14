@@ -8,6 +8,9 @@ from utils.image_utils import extract_video_thumbnail, add_play_icon, composite_
 from ui.theme import *
 from ui.components.media_viewer import GlobalMediaPlayer
 from utils.assets import assets
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 class MemoryCard(ctk.CTkFrame):
     def __init__(self, parent, memory, width, click_callback, executor):
@@ -77,8 +80,8 @@ class MemoryCard(ctk.CTkFrame):
                 self.after(0, lambda: self._apply_image(pil_img, is_video))
             else:
                 self.after(0, lambda: self._set_placeholder_state(is_missing=False))
-        except Exception as e:
-            print(f"Error loading memory {self.path}: {e}")
+        except Exception:
+            logger.warning("Error loading memory %s", self.path, exc_info=True)
             self.after(0, lambda: self._set_placeholder_state(is_missing=True))
 
     def _apply_image(self, pil_img, is_video):
@@ -93,7 +96,8 @@ class MemoryCard(ctk.CTkFrame):
             ctk_img = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(w, 200))
             self.btn.configure(image=ctk_img, text="", fg_color="transparent")
             self.btn.image = ctk_img
-        except:
+        except Exception:
+            logger.debug("Memory card render failed for %s", self.path, exc_info=True)
             self._set_placeholder_state(is_missing=False)
 
 class RowFrame(ctk.CTkFrame):
@@ -185,8 +189,11 @@ class MemoriesView(ctk.CTkFrame):
 
     def open_media(self, path):
         playlist = [m['path'] for m in self.memories if m.get('path')]
-        try: idx = playlist.index(path)
-        except: idx = 0; playlist = [path]
+        try:
+            idx = playlist.index(path)
+        except Exception:
+            idx = 0
+            playlist = [path]
         GlobalMediaPlayer(self, playlist, idx)
 
     def on_sort_changed(self, choice):
@@ -241,7 +248,8 @@ class MemoriesView(ctk.CTkFrame):
                 dt = datetime.strptime(mem['date'], "%Y-%m-%d %H:%M:%S UTC")
                 month_key = dt.strftime("%Y-%m")
                 display_text = dt.strftime("%B %Y").upper()
-            except:
+            except Exception:
+                logger.debug("Memory date parse failed for %s", mem.get("date", ""), exc_info=True)
                 dt = None
                 month_key = "Unknown"
                 display_text = "UNKNOWN"
