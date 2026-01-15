@@ -88,36 +88,77 @@ class MemoryDownloader:
                 with open(staged_chat_path, "r", encoding="utf-8") as f: 
                     master_chats = json.load(f)
             except: pass
-            
+
         html_files = [f for f in os.listdir(chat_html_dir) if f.endswith(".html")]
         for i, filename in enumerate(html_files):
-            friend_name, msgs = self._parse_chat_html(os.path.join(chat_html_dir, filename))
+            # Pass the filename as a fallback friend name
+            raw_name = os.path.splitext(filename)[0].replace("subpage_", "")
+            friend_name, msgs = self._parse_chat_html(os.path.join(chat_html_dir, filename), raw_name)
+            
             if friend_name and msgs:
-                existing = master_chats.get(friend_name, [])
+                # Use the friend name determined by the parser or the filename
+                target_key = friend_name if friend_name != "Unknown" else raw_name
+                existing = master_chats.get(target_key, [])
+                
+                # Deduplication logic
                 seen = {f"{m.get('Created')}_{m.get('Content')}" for m in existing}
-                master_chats[friend_name] = existing + [m for m in msgs if f"{m.get('Created')}_{m.get('Content')}" not in seen]
+                new_entries = [m for m in msgs if f"{m.get('Created')}_{m.get('Content')}" not in seen]
+                
+                master_chats[target_key] = existing + new_entries
+            
             self.progress_callback(0.33 + ((i + 1) / len(html_files) * 0.33))
             
         with open(staged_chat_path, "w", encoding="utf-8") as f: 
             json.dump(master_chats, f, indent=4)
 
-    def _parse_chat_html(self, file_path):
+    def _parse_chat_html(self, file_path, fallback_name):
+        """Deep Search Parser that identifies 'MEDIA' tags to link files."""
         try:
             with open(file_path, 'r', encoding='utf-8') as f: 
                 soup = BeautifulSoup(f, 'html.parser')
-            friend_name = os.path.splitext(os.path.basename(file_path))[0].replace("subpage_", "")
+            
             messages = []
-            for span in soup.find_all('span'):
-                sender, content, ts = span.find('h4'), span.find('p'), span.find('h6')
-                if sender and ts:
-                    messages.append({
-                        "From": sender.text.strip(), 
-                        "Created": ts.text.strip(), 
-                        "Content": content.text.strip() if content else "", 
-                        "Media IDs": ""
-                    })
-            return friend_name, messages
-        except: return None, []
+            # Modern Snap HTML groups messages in spans containing h4, p, and h6
+            message_blocks = soup.find_all(['span'], recursive=True)
+            
+            for block in message_blocks:
+                ts_tag = block.find('h6')
+                if not ts_tag: continue
+                
+                sender_tag = block.find('h4')
+                content_tag = block.find('p')
+                # Identify if this is a Media message by looking for the "MEDIA" label
+                media_indicator = block.find('span', string="MEDIA")
+                
+                sender = sender_tag.text.strip() if sender_tag else fallback_name
+                content = content_tag.text.strip() if content_tag else ""
+                timestamp = ts_tag.text.strip()
+                
+                media_ids = ""
+                # If "MEDIA" is found, generate an ID matching the filename format: YYYY-MM-DD_HH-MM-SS
+                if media_indicator:
+                    try:
+                        # Convert "2025-03-25 20:31:32 UTC" -> "2025-03-25_20-31-32"
+                        clean_ts = timestamp.replace(" UTC", "")
+                        dt = datetime.strptime(clean_ts, "%Y-%m-%d %H:%M:%S")
+                        media_ids = dt.strftime("%Y-%m-%d_%H-%M-%S")
+                    except:
+                        pass
+
+                msg_data = {
+                    "From": sender, 
+                    "Created": timestamp, 
+                    "Content": content, 
+                    "Media IDs": media_ids
+                }
+                
+                if msg_data not in messages:
+                    messages.append(msg_data)
+            
+            return fallback_name, messages
+        except Exception as e:
+            print(f"Error parsing {file_path}: {e}")
+            return None, []
 
     def download_memories(self, json_path, download_folder):
         if not os.path.exists(json_path): return

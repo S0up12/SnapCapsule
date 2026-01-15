@@ -16,7 +16,6 @@ class DataManager:
         self.chat_media_path = ""
 
     def reload(self):
-        """Reloads all data from the configured data root, prioritizing staged data."""
         self.media_map = {}
         self.raw_chats = {}
         self.chat_index = []
@@ -27,11 +26,9 @@ class DataManager:
         if not self.root or not os.path.exists(self.root):
             return [], [], {}
 
-        # Priority: staged_data folder created during ZIP processing
         staged_path = os.path.join(self.root, "staged_data")
         data_src = staged_path if os.path.exists(staged_path) else self.root
 
-        # Target staged chat_history first, then fallback to nested json/
         possible_chat_paths = [
             os.path.join(data_src, "chat_history.json"),
             os.path.join(data_src, "json", "chat_history.json")
@@ -45,14 +42,10 @@ class DataManager:
             
         self.chat_media_path = os.path.join(self.root, "chat_media")
         
-        # 1. Index Media (Fast)
         if os.path.exists(self.chat_media_path):
-            print(f"⏳ Indexing Chat Media...")
             self._index_media(self.chat_media_path)
         
-        # 2. Load Raw JSON
         if self.json_path:
-            print(f"⏳ Loading Chat JSON from: {self.json_path}")
             try:
                 with open(self.json_path, "r", encoding="utf-8") as f:
                     self.raw_chats = json.load(f)
@@ -60,11 +53,7 @@ class DataManager:
             except Exception as e:
                 print(f"❌ JSON Load Error: {e}")
         
-        # 3. Memories & Profile (Explicitly passing data_src)
-        print("⏳ Parsing Memories...")
         self._parse_memories_list(data_src)
-
-        print("⏳ Parsing Profile Data...")
         self._parse_profile_data(data_src)
 
         mem_path = self.cfg.get("memories_path") or os.path.join(self.root, "memories")
@@ -105,6 +94,8 @@ class DataManager:
                 if entry.is_file():
                     filename = entry.name
                     self.media_map[filename] = entry.path
+                    name_no_ext = os.path.splitext(filename)[0]
+                    self.media_map[name_no_ext] = entry.path
                     if "_" in filename:
                         try:
                             parts = filename.split("_", 1)
@@ -114,12 +105,9 @@ class DataManager:
                         except: continue
 
     def _parse_memories_list(self, data_src):
-        # Check flat staged root first, then standard json/ directory
-        mem_json = os.path.join(data_src, "memories_history.json")
-        if not os.path.exists(mem_json):
-            mem_json = os.path.join(data_src, "json", "memories_history.json")
-        
-        if not os.path.exists(mem_json): return
+        possible_paths = [os.path.join(data_src, "memories_history.json"), os.path.join(data_src, "json", "memories_history.json")]
+        mem_json = next((p for p in possible_paths if os.path.exists(p)), "")
+        if not mem_json: return
         try:
             with open(mem_json, "r", encoding="utf-8") as f:
                 data = json.load(f)
@@ -129,11 +117,7 @@ class DataManager:
 
     def _link_memories(self, folder_path):
         if not os.path.exists(folder_path): return
-        file_index = {}
-        with os.scandir(folder_path) as it:
-            for entry in it:
-                if entry.is_file():
-                    file_index[os.path.splitext(entry.name)[0]] = entry.path
+        file_index = {os.path.splitext(entry.name)[0]: entry.path for entry in os.scandir(folder_path) if entry.is_file()}
         for mem in self.memories:
             try:
                 date_str = mem['date']
@@ -144,9 +128,7 @@ class DataManager:
             except: pass
 
     def _parse_profile_data(self, data_src):
-        # Determine if we are reading from flat staged folder or nested json/
         json_dir = data_src if os.path.exists(os.path.join(data_src, "account.json")) else os.path.join(data_src, "json")
-        
         def load_safe(filename, key):
             p = os.path.join(json_dir, filename)
             if os.path.exists(p):
@@ -154,17 +136,14 @@ class DataManager:
                     with open(p, "r", encoding="utf-8") as f: return json.load(f).get(key, [])
                 except: return []
             return []
-
         acc_path = os.path.join(json_dir, "account.json")
         if os.path.exists(acc_path):
             try:
                 with open(acc_path, "r", encoding="utf-8") as f:
                     acc = json.load(f)
-                    # Support both standard and root-level account structures
                     self.profile['basic'] = acc.get("Basic Information", acc)
                     self.profile['device_history'] = acc.get("Device History", [])
             except: pass
-            
         self.profile['name_history'] = load_safe("account_history.json", "Display Name Change")
         friends_path = os.path.join(json_dir, "friends.json")
         if os.path.exists(friends_path):
@@ -174,7 +153,6 @@ class DataManager:
                     self.profile['friends_list'] = fr.get("Friends", [])
                     self.profile['stats'] = {"friends": len(self.profile['friends_list']), "deleted": len(fr.get("Deleted Friends", [])), "blocked": len(fr.get("Blocked Users", []))}
             except: pass
-
         user_prof_path = os.path.join(json_dir, "user_profile.json")
         if os.path.exists(user_prof_path):
             try:
@@ -182,11 +160,9 @@ class DataManager:
                     eng = json.load(f).get("Engagement", [])
                     self.profile['engagement'] = {item["Event"]: item["Occurrences"] for item in eng if isinstance(item, dict) and "Event" in item} if isinstance(eng, list) else {}
             except: pass
-
         self.profile['places'] = load_safe("snap_map_places_history.json", "Snap Map Places History")[:100]
 
     def perform_integrity_check(self):
-        """Cross-references JSON records with physical files to fix blank Settings views."""
         report = {"chats": {"total": 0, "missing": 0}, "memories": {"total": 0, "missing": 0}}
         for friend in self.raw_chats:
             msgs = self.raw_chats[friend]

@@ -37,40 +37,77 @@ class HomeView(ctk.CTkFrame):
         input_container = ctk.CTkFrame(self.card, fg_color="transparent")
         input_container.pack(fill="x", padx=30) 
 
-        ctk.CTkLabel(input_container, text="1. Extract Data from ZIP", font=("Segoe UI", 13, "bold"), text_color=SNAP_BLUE, anchor="w").pack(fill="x", pady=(0, 5))
-        
-        dl_frame = ctk.CTkFrame(self.card, fg_color=BG_CARD, corner_radius=15, border_width=2, border_color=BG_HOVER)
-        dl_frame.pack(fill="x", padx=30, pady=(10, 15), ipady=10)
-        dl_frame.grid_columnconfigure(1, weight=1)
-        
-        icon_dl = assets.load_icon("download-cloud", size=(20, 20))
-        self.btn_dl = ctk.CTkButton(dl_frame, text=" Select ZIP & Process", image=icon_dl, compound="left",
-                                    command=self.start_dl, fg_color=BG_SIDEBAR, hover_color=BG_HOVER, 
-                                    text_color=TEXT_MAIN, width=180, height=35, corner_radius=18)
-        self.btn_dl.grid(row=0, column=0, padx=15, pady=10)
-        self.lbl_status = ctk.CTkLabel(dl_frame, text="Ready to process archive", text_color=TEXT_DIM, font=("Segoe UI", 11))
-        self.lbl_status.grid(row=0, column=1, sticky="w", padx=10)
+        # OPTION A: ZIP FLOW
+        ctk.CTkLabel(input_container, text="Option A: Extract from ZIP", font=("Segoe UI", 13, "bold"), text_color=SNAP_BLUE, anchor="w").pack(fill="x", pady=(10, 5))
+        self.btn_dl = ctk.CTkButton(input_container, text=" Select ZIP & Process", image=assets.load_icon("download-cloud", size=(20, 20)), 
+                                    compound="left", command=self.start_dl, fg_color=BG_CARD, hover_color=BG_HOVER, 
+                                    text_color=TEXT_MAIN, height=35, corner_radius=18)
+        self.btn_dl.pack(fill="x", pady=(0, 10))
 
-        # --- DATA INTEGRITY DASHBOARD ---
-        self.integrity_frame = ctk.CTkFrame(self.card, fg_color=BG_MAIN, corner_radius=12)
-        self.integrity_frame.pack(fill="x", padx=30, pady=10)
-        
-        self.lbl_integrity = ctk.CTkLabel(self.integrity_frame, text="Data Health: Waiting for extraction...", 
-                                          font=("Segoe UI", 12, "bold"), text_color=TEXT_DIM)
-        self.lbl_integrity.pack(pady=10)
-
-        ctk.CTkLabel(input_container, text="Current Data Root:", font=("Segoe UI", 11, "bold"), text_color=TEXT_DIM, anchor="w").pack(fill="x", pady=(10, 0))
+        # OPTION B: EXISTING FOLDER FLOW
+        ctk.CTkLabel(input_container, text="Option B: Link Existing Folder", font=("Segoe UI", 13, "bold"), text_color=SNAP_BLUE, anchor="w").pack(fill="x", pady=(10, 5))
         self.entry_root = self._build_input_row(input_container, self.app.cfg.get("data_root"))
+        
+        # RE-STAGE BUTTON
+        self.btn_restage = ctk.CTkButton(input_container, text=" Re-scan & Stage Log Data", 
+                                        image=assets.load_icon("activity", size=(18, 18)), 
+                                        compound="left", command=self.confirm_restage, 
+                                        fg_color="transparent", border_width=1, border_color=BG_HOVER,
+                                        text_color=TEXT_DIM, height=30, corner_radius=15)
+        self.btn_restage.pack(fill="x", pady=(10, 0))
+
+        self.lbl_status = ctk.CTkLabel(self.card, text="Ready to process data", text_color=TEXT_DIM, font=("Segoe UI", 11))
+        self.lbl_status.pack(pady=(15, 0))
+
+        self.lbl_integrity = ctk.CTkLabel(self.card, text="Data Health: Waiting for selection...", font=("Segoe UI", 12, "bold"), text_color=TEXT_DIM)
+        self.lbl_integrity.pack(pady=5)
 
         self.progress = ctk.CTkProgressBar(self.card, progress_color=SNAP_YELLOW, height=6)
         self.progress.set(0)
-        self.progress.pack(fill="x", padx=30, pady=(20, 20))
+        self.progress.pack(fill="x", padx=30, pady=(15, 15))
 
-        icon_save = assets.load_icon("save", size=(24, 24))
-        ctk.CTkButton(self.card, text=" Save Settings & Launch", image=icon_save, compound="left",
+        ctk.CTkButton(self.card, text=" Save Settings & Launch", image=assets.load_icon("save", size=(24, 24)), compound="left",
                       height=45, width=240, fg_color=SNAP_BLUE, hover_color="#007ACC", text_color="white",
                       font=("Segoe UI", 15, "bold"), corner_radius=22, command=self.save).pack(pady=10)
+        
+    def confirm_restage(self):
+        """Asks for confirmation before overwriting staged data."""
+        root_path = self.entry_root.get()
+        if not root_path or not os.path.exists(root_path): return
 
+        # Simple confirmation dialog
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Confirm Re-scan")
+        dialog.geometry("400x200")
+        dialog.attributes("-topmost", True)
+
+        ctk.CTkLabel(dialog, text="Overwrite Staged Data?", font=("Segoe UI", 16, "bold")).pack(pady=(20, 5))
+        ctk.CTkLabel(dialog, text="Existing 'staged_data' will be replaced with fresh logs.", text_color="gray", wraplength=350).pack(pady=10)
+
+        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=20, pady=10)
+        
+        def proceed():
+            dialog.destroy()
+            self.force_restage()
+
+        ctk.CTkButton(btn_frame, text="Cancel", fg_color=BG_CARD, command=dialog.destroy).pack(side="left", expand=True, padx=5)
+        ctk.CTkButton(btn_frame, text="Proceed", fg_color=SNAP_RED, command=proceed).pack(side="left", expand=True, padx=5)
+
+    def force_restage(self):
+        root_path = self.entry_root.get()
+        self.lbl_status.configure(text="⚡ Re-scanning local data...", text_color=SNAP_BLUE)
+        self.downloader = MemoryDownloader(self.update_status, self.update_progress)
+        
+        def run():
+            actual_root = self.downloader._find_snap_root(root_path)
+            final_stage = os.path.join(actual_root, "staged_data")
+            os.makedirs(final_stage, exist_ok=True)
+            self.downloader._stage_all_data(actual_root, final_stage)
+            self.after(0, self.save)
+
+        threading.Thread(target=run, daemon=True).start()
+    
     def _build_tutorial_card(self, row, column):
         container = ctk.CTkFrame(self, fg_color="transparent")
         container.grid(row=row, column=column, sticky="nsew", padx=20, pady=20)
@@ -100,7 +137,7 @@ class HomeView(ctk.CTkFrame):
             else:
                 font = ("Segoe UI", 13)
                 if "**" in line: 
-                    line = line.replace("**", "")
+                    line = line.replace("**", "") # FIX: Separated from font assignment
                     font = ("Segoe UI", 13, "bold")
                 ctk.CTkLabel(parent, text=line, font=font, text_color=TEXT_DIM, justify="left", anchor="w", wraplength=400).pack(fill="x", padx=15, pady=1)
 
@@ -132,33 +169,37 @@ class HomeView(ctk.CTkFrame):
 
     def _browse(self, entry):
         p = filedialog.askdirectory()
-        if p: 
-            entry.delete(0, "end")
-            entry.insert(0, p)
+        if p: entry.delete(0, "end"), entry.insert(0, p)
 
     def update_status(self, text): self.lbl_status.configure(text=text)
     def update_progress(self, val): self.progress.set(val)
     
     def save(self):
         root_path = self.entry_root.get()
-        self.app.cfg.save_config(root_path, self.app.cfg.get("memories_path"))
+        if not root_path or not os.path.exists(root_path):
+            self.lbl_status.configure(text="❌ Invalid folder path", text_color=SNAP_RED)
+            return
+        
+        staged_path = os.path.join(root_path, "staged_data")
+        if not os.path.exists(staged_path):
+            self.force_restage()
+        else:
+            self._finalize_save()
+            
+    def _finalize_save(self):
+        self.app.cfg.save_config(self.entry_root.get(), self.app.cfg.get("memories_path"))
         chat_index, memories, profile = self.app.data_manager.reload()
         self.app.chat_index, self.app.memories, self.app.profile = chat_index, memories, profile
         
-        # Update Integrity UI
         report = self.app.data_manager.perform_integrity_check()
         chats_found = report['chats']['total'] - report['chats']['missing']
-        mems_found = report['memories']['total'] - report['memories']['missing']
-        
-        if chats_found == 0 and mems_found == 0:
-            self.lbl_integrity.configure(text="❌ No data found. Is 'staged_data' in root?", text_color=SNAP_RED)
-        else:
-            self.lbl_integrity.configure(text=f"✅ Linked: {chats_found} Chats, {mems_found} Memories", text_color="#2ECC71")
+        self.lbl_integrity.configure(text=f"✅ Linked: {chats_found} Chats, {len(memories)} Memories", text_color="#2ECC71")
+        self.lbl_status.configure(text="✅ Sync Complete", text_color="#2ECC71")
 
-        if self.app.view_chat: self.app.view_chat.chat_list = chat_index; self.app.view_chat.populate_friends(chat_index)
-        if self.app.view_memories: self.app.view_memories.memories = memories; self.app.view_memories._calculate_stats(); self.app.view_memories.load_page(1)
+        if self.app.view_chat: self.app.view_chat.populate_friends(chat_index)
+        if self.app.view_memories: self.app.view_memories.load_page(1)
         if self.app.view_profile: 
             self.app.view_profile.destroy()
             self.app.view_profile = None
-        self.btn_dl.configure(text=" Select ZIP & Process", image=assets.load_icon("download-cloud", size=(20, 20)), fg_color=BG_SIDEBAR)
+        self.btn_dl.configure(text=" Select ZIP & Process", image=assets.load_icon("download-cloud", size=(20, 20)), fg_color=BG_CARD)
         print("✅ Data reloaded and UI refreshed.")
