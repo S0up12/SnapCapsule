@@ -4,7 +4,9 @@ import json
 import shutil
 import concurrent.futures
 import time
+import zipfile
 from datetime import datetime
+from bs4 import BeautifulSoup
 
 class MemoryDownloader:
     def __init__(self, status_callback, progress_callback):
@@ -13,134 +15,135 @@ class MemoryDownloader:
         self.cancelled = False
         self._executor = None
 
-    def cancel(self):
-        """Signals the download process to abort."""
-        self.cancelled = True
-        self.status_callback("⛔ Stopping download...")
+    def process_data_package(self, zip_path, extract_root, download_memories=True):
+        self.cancelled = False
+        try:
+            # 1. Unzip
+            self.status_callback("📦 Extracting ZIP archive...")
+            with zipfile.ZipFile(zip_path, 'r') as z:
+                files = z.namelist()
+                for i, file in enumerate(files):
+                    if self.cancelled: break
+                    z.extract(file, extract_root)
+                    self.progress_callback((i + 1) / len(files) * 0.33)
+            
+            if self.cancelled: return False
+
+            # 2. Locate folder containing the logs (e.g. "mydata~123/")
+            actual_root = self._find_snap_root(extract_root)
+
+            # 3. Create staged_data INSIDE that folder
+            staging_path = os.path.join(actual_root, "staged_data")
+            if not os.path.exists(staging_path): 
+                os.makedirs(staging_path)
+                
+            self.status_callback("⚡ Syncing JSON and HTML logs...")
+            self._stage_all_data(actual_root, staging_path)
+            
+            if download_memories:
+                self.download_memories(os.path.join(staging_path, "memories_history.json"), 
+                                       os.path.join(actual_root, "memories"))
+            
+            self.status_callback("🎉 Data Staging Complete!")
+            self.progress_callback(1.0)
+            return True
+        except Exception as e:
+            self.status_callback(f"❌ Process Error: {str(e)}")
+            return False
+    
+    def _find_snap_root(self, extract_root):
+        """Locates the folder containing 'json' or 'html' directories."""
+        if os.path.exists(os.path.join(extract_root, "json")) or os.path.exists(os.path.join(extract_root, "html")):
+            return extract_root
+        
+        for item in os.listdir(extract_root):
+            path = os.path.join(extract_root, item)
+            if os.path.isdir(path):
+                if os.path.exists(os.path.join(path, "json")) or os.path.exists(os.path.join(path, "html")):
+                    return path
+        return extract_root
+
+    def _stage_all_data(self, root, stage_dir):
+        json_src = os.path.join(root, "json")
+        html_src = os.path.join(root, "html")
+        
+        # Copy native JSONs
+        if os.path.exists(json_src):
+            for f in os.listdir(json_src):
+                if f.endswith(".json"): 
+                    shutil.copy2(os.path.join(json_src, f), os.path.join(stage_dir, f))
+        
+        # Convert HTMLs
+        if os.path.exists(html_src): 
+            self._convert_html_dir(html_src, stage_dir)
+
+    def _convert_html_dir(self, html_dir, stage_dir):
+        chat_html_dir = os.path.join(html_dir, "chat_history")
+        if not os.path.exists(chat_html_dir): return
+        staged_chat_path = os.path.join(stage_dir, "chat_history.json")
+        
+        master_chats = {}
+        if os.path.exists(staged_chat_path):
+            try:
+                with open(staged_chat_path, "r", encoding="utf-8") as f: 
+                    master_chats = json.load(f)
+            except: pass
+            
+        html_files = [f for f in os.listdir(chat_html_dir) if f.endswith(".html")]
+        for i, filename in enumerate(html_files):
+            friend_name, msgs = self._parse_chat_html(os.path.join(chat_html_dir, filename))
+            if friend_name and msgs:
+                existing = master_chats.get(friend_name, [])
+                seen = {f"{m.get('Created')}_{m.get('Content')}" for m in existing}
+                master_chats[friend_name] = existing + [m for m in msgs if f"{m.get('Created')}_{m.get('Content')}" not in seen]
+            self.progress_callback(0.33 + ((i + 1) / len(html_files) * 0.33))
+            
+        with open(staged_chat_path, "w", encoding="utf-8") as f: 
+            json.dump(master_chats, f, indent=4)
+
+    def _parse_chat_html(self, file_path):
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f: 
+                soup = BeautifulSoup(f, 'html.parser')
+            friend_name = os.path.splitext(os.path.basename(file_path))[0].replace("subpage_", "")
+            messages = []
+            for span in soup.find_all('span'):
+                sender, content, ts = span.find('h4'), span.find('p'), span.find('h6')
+                if sender and ts:
+                    messages.append({
+                        "From": sender.text.strip(), 
+                        "Created": ts.text.strip(), 
+                        "Content": content.text.strip() if content else "", 
+                        "Media IDs": ""
+                    })
+            return friend_name, messages
+        except: return None, []
 
     def download_memories(self, json_path, download_folder):
-        self.cancelled = False
-        
-        # 1. Validation
-        if not os.path.exists(json_path):
-            self.status_callback("❌ JSON file not found.")
-            return
-
+        if not os.path.exists(json_path): return
         try:
-            with open(json_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            # Handle list vs dict structure
+            with open(json_path, "r", encoding="utf-8") as f: data = json.load(f)
             memories = data.get("Saved Media", []) if isinstance(data, dict) else data
-        except Exception as e:
-            self.status_callback(f"❌ JSON Error: {e}")
-            return
-
-        total_files = len(memories)
-        if total_files == 0:
-            self.status_callback("✅ No memories found to download.")
-            self.progress_callback(1.0)
-            return
-
-        if not os.path.exists(download_folder):
-            try:
-                os.makedirs(download_folder)
-            except:
-                self.status_callback("❌ Invalid Download Folder.")
-                return
-
-        # 2. Disk Space Check
-        # Estimate: ~3MB per photo, ~20MB per video (Conservative avg)
-        est_size = 0
-        for m in memories:
-            if "video" in m.get("Media Type", "").lower(): est_size += 20 * 1024 * 1024
-            else: est_size += 3 * 1024 * 1024
-        
-        total, used, free = shutil.disk_usage(download_folder)
-        
-        if free < est_size:
-            free_mb = free // (1024 * 1024)
-            req_mb = est_size // (1024 * 1024)
-            self.status_callback(f"⚠️ Low Disk Space! Free: {free_mb}MB, Est. Need: {req_mb}MB")
-            return # Stop execution
-
-        # 3. Start Download
-        self.status_callback(f"🚀 Starting download of {total_files} files...")
-        
-        success = 0
-        failed = 0
-        skipped = 0
-        
-        # Using a ThreadPool
+        except: return
+        if not os.path.exists(download_folder): os.makedirs(download_folder)
         with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
             self._executor = executor
             futures = {executor.submit(self._download_single, m, download_folder): m for m in memories}
-            
             for i, future in enumerate(concurrent.futures.as_completed(futures)):
-                if self.cancelled:
-                    executor.shutdown(wait=False, cancel_futures=True)
-                    break
-                
-                try:
-                    result = future.result()
-                    if result == "success": success += 1
-                    elif result == "skipped": skipped += 1
-                    else: failed += 1
-                except Exception:
-                    failed += 1
-                
-                # Update UI
-                progress = (i + 1) / total_files
+                if self.cancelled: break
+                progress = 0.66 + ((i + 1) / len(memories) * 0.34)
                 self.progress_callback(progress)
-                self.status_callback(f"Downloading... ✅{success} ⏭️{skipped} ❌{failed}")
-
-        # Final Report
-        if self.cancelled:
-            self.status_callback("⛔ Download Cancelled")
-            self.progress_callback(0)
-        else:
-            self.status_callback(f"🎉 Done! Saved: {success}, Skipped: {skipped}, Failed: {failed}")
-            self.progress_callback(1.0)
+                self.status_callback(f"Downloading Memories... {int(progress*100)}%")
 
     def _download_single(self, item, folder):
-        if self.cancelled: return "cancelled"
-        
-        url = item.get("Media Download Url")
-        date_str = item.get("Date")
-        
+        url, date_str = item.get("Media Download Url"), item.get("Date")
         if not url or not date_str: return "failed"
-
         try:
-            # Generate Filename
             dt = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S UTC")
-            timestamp = dt.strftime("%Y-%m-%d_%H-%M-%S")
-            is_video = "video" in item.get("Media Type", "").lower()
-            ext = ".mp4" if is_video else ".jpg" 
-            
-            filename = f"{timestamp}{ext}"
-            filepath = os.path.join(folder, filename)
-
-            # Check Existing
-            if os.path.exists(filepath):
-                return "skipped"
-
-            # RETRY LOGIC (Max 3 attempts)
-            for attempt in range(3):
-                if self.cancelled: return "cancelled"
-                
-                try:
-                    with requests.get(url, stream=True, timeout=15) as r:
-                        if r.status_code == 200:
-                            with open(filepath, 'wb') as f:
-                                shutil.copyfileobj(r.raw, f)
-                            return "success"
-                except Exception:
-                    pass # Network error, try again
-                
-                # Wait before retry (0.5s, 1.0s, etc if desired)
-                time.sleep(1)
-
-            # If loop finishes without success
-            return "failed"
-                    
-        except Exception:
-            return "failed"
+            filepath = os.path.join(folder, f"{dt.strftime('%Y-%m-%d_%H-%M-%S')}.jpg")
+            if os.path.exists(filepath): return "skipped"
+            r = requests.get(url, timeout=15)
+            if r.status_code == 200:
+                with open(filepath, 'wb') as f: f.write(r.content)
+                return "success"
+        except: return "failed"

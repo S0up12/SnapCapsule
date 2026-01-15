@@ -1,25 +1,30 @@
 # 📚 How to get your Data
 
-## 1. Login to Snapchat Web
-Go to accounts.snapchat.com in your browser. This is the official portal to manage your data.
+## 1. Request 'My Data'
+Go to accounts.snapchat.com in your browser.
+* Click on 'My Data'.
+* **IMPORTANT:** Ensure 'Memories' is included!
+* **FORMAT:** Choose **JSON** if prompted (though we now support HTML conversion).
 
 [BUTTON:https://accounts.snapchat.com] Open accounts.snapchat.com
 
-## 2. Request 'My Data'
-Click on 'My Data'. You will see a list of downloadable information.
-**IMPORTANT:** Ensure 'Memories' is included! Toggle it ON if you want your photos and videos.
+## 2. Wait for Email
+Snapchat will email you when your data is ready. This can take anywhere from a few hours to several days for large accounts.
 
-## 3. Filter by Date (Optional)
-You can choose a specific date range or download everything (default). Larger requests take longer to process.
+## 3. Download the ZIP
+Download the ZIP file provided in the email link. Do **not** unzip it manually if you want SnapCapsule to handle the conversion and staging for you.
 
-## 4. Submit & Wait
-Confirm your email and click Submit. Snapchat will email you when the data is ready.
-⚠️ Note: This can take hours or even days for large accounts!
+## 4. Process in SnapCapsule
+* Come back to this **Home** tab.
+* Click the **"Select ZIP & Process"** button.
+* Select the `mydata~*.zip` file you downloaded.
+* Choose a permanent folder on your computer where you want SnapCapsule to store your archive.
 
-## 5. Download & Prepare
-* Download the ZIP file from the email link.
-* EXTRACT the zip file completely.
-* ⚠️ SPACE WARNING: Memories can be huge (10GB-100GB+). Ensure you extract it to a drive with plenty of free space.
+## 5. Staging & Memories
+SnapCapsule will now:
+1. Extract your files.
+2. Convert all HTML logs to a unified JSON format (finding "missing" data).
+3. Download your Memories from the Snap servers if you chose "Yes".
 
-## 6. Link to SnapCapsule
-Come back here and select that extracted folder in 'Step 1'. We will do the rest!
+## 6. Launch
+Once the progress bar is full, click **Save Settings & Launch** to browse your history!
