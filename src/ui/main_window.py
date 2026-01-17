@@ -5,7 +5,8 @@ from ui.views.profile_view import ProfileView
 from ui.views.chat_view import ChatView
 from ui.views.memories_view import MemoriesView
 from ui.views.home_view import HomeView
-from ui.views.settings_view import SettingsView # New import
+from ui.views.settings_view import SettingsView 
+from ui.views.tools_view import ToolsView  # New Import
 from ui.theme import *
 from utils.assets import assets
 
@@ -17,7 +18,6 @@ class MainWindow(ctk.CTk):
         self.data_manager = data_manager
         self.cfg = config_manager
         
-        # 1. LOAD THEME FROM CONFIG
         saved_mode = self.cfg.get("appearance_mode")
         ctk.set_appearance_mode(saved_mode)
         
@@ -44,7 +44,8 @@ class MainWindow(ctk.CTk):
         self.view_profile = None
         self.view_chat = None
         self.view_memories = None
-        self.view_settings = None # New view pointer
+        self.view_settings = None
+        self.view_tools = None # Pointer for Tools View
 
         self._setup_ui()
         
@@ -66,31 +67,28 @@ class MainWindow(ctk.CTk):
         self.grid_columnconfigure(1, weight=1) 
         self.grid_rowconfigure(0, weight=1)
 
-        # Sidebar container
         self.nav_frame = ctk.CTkFrame(self, fg_color=BG_SIDEBAR, corner_radius=0, width=80)
         self.nav_frame.grid(row=0, column=0, sticky="nsew")
         self.nav_frame.grid_propagate(False)
+        self.nav_frame.grid_rowconfigure(1, weight=1) 
         
-        # Grid layout for sidebar to allow bottom alignment
-        self.nav_frame.grid_rowconfigure(1, weight=1) # Spacer row
-        
-        # Top Nav Section
         self.top_nav = ctk.CTkFrame(self.nav_frame, fg_color="transparent")
         self.top_nav.grid(row=0, column=0, sticky="new", pady=15)
         
         self.nav_buttons = {}
         
+        # Navigation Items including the new Tools view
         nav_items = [
             ("Home", self.show_home_view, "home", "home"),
             ("Chats", self.show_chats_view, "chat", "message-square"),
             ("Profile", self.show_profile_view, "profile", "user"),
-            ("Mems", self.show_memories_view, "memories", "save")
+            ("Mems", self.show_memories_view, "memories", "save"),
+            ("Tools", self.show_tools_view, "tools", "tool") # Using tool.svg icon
         ]
 
         for text, cmd, key, icon_name in nav_items:
             self._add_nav_btn(self.top_nav, text, cmd, key, icon_name)
 
-        # Bottom Nav Section (Settings)
         self.bottom_nav = ctk.CTkFrame(self.nav_frame, fg_color="transparent")
         self.bottom_nav.grid(row=2, column=0, sticky="sew", pady=15)
         self._add_nav_btn(self.bottom_nav, "Settings", self.show_settings_view, "settings", "settings")
@@ -126,7 +124,7 @@ class MainWindow(ctk.CTk):
     def _hide_all_views(self):
         if self.view_chat and self.view_chat.winfo_ismapped():
             self.view_chat.cleanup()
-        for view in [self.view_home, self.view_profile, self.view_chat, self.view_memories, self.view_settings]:
+        for view in [self.view_home, self.view_profile, self.view_chat, self.view_memories, self.view_settings, self.view_tools]:
             if view: view.grid_forget()
 
     def show_home_view(self):
@@ -141,18 +139,13 @@ class MainWindow(ctk.CTk):
         self._update_active_tab("chat")
         if not self.view_chat:
             self.view_chat = ChatView(self.content_frame, self.data_manager, self.profile)
-        else:
-            self.view_chat.chat_list = self.chat_index 
         self.view_chat.grid(row=0, column=0, sticky="nsew")
 
     def show_profile_view(self):
         self._hide_all_views()
         self._update_active_tab("profile")
-        
-        # FIX: Check if view exists first. Only create once.
         if not self.view_profile:
             self.view_profile = ProfileView(self.content_frame, self.profile)
-        
         self.view_profile.grid(row=0, column=0, sticky="nsew")
 
     def show_memories_view(self):
@@ -166,48 +159,40 @@ class MainWindow(ctk.CTk):
         self._hide_all_views()
         self._update_active_tab("settings")
         if not self.view_settings:
-            # Change: Pass self.data_manager here
             self.view_settings = SettingsView(self.content_frame, self.cfg, self.data_manager) 
         self.view_settings.grid(row=0, column=0, sticky="nsew")
+
+    def show_tools_view(self):
+        self._hide_all_views()
+        self._update_active_tab("tools")
+        if not self.view_tools:
+            self.view_tools = ToolsView(self.content_frame, self.cfg, self.data_manager)
+        self.view_tools.grid(row=0, column=0, sticky="nsew")
 
     def _on_global_mouse_wheel(self, event):
         x, y = self.winfo_pointerxy()
         widget = self.winfo_containing(x, y)
         if not widget: return
-        
         target = None
         w_str = str(widget) 
-        
         def is_inside(parent_widget):
             return parent_widget and str(parent_widget) in w_str
-
         if self.view_memories and self.view_memories.winfo_ismapped():
             target = self.view_memories.scroll_mems
         elif self.view_chat and self.view_chat.winfo_ismapped():
-            if is_inside(self.view_chat.scroll_friends):
-                target = self.view_chat.scroll_friends
-            else:
-                target = self.view_chat.scroll_chat
+            if is_inside(self.view_chat.scroll_friends): target = self.view_chat.scroll_friends
+            else: target = self.view_chat.scroll_chat
         elif self.view_profile and self.view_profile.winfo_ismapped():
-            if hasattr(self.view_profile, 'friends_scroll') and is_inside(self.view_profile.friends_scroll):
-                target = self.view_profile.friends_scroll
-            elif hasattr(self.view_profile, 'device_scroll') and is_inside(self.view_profile.device_scroll):
-                target = self.view_profile.device_scroll
-            elif hasattr(self.view_profile, 'name_scroll') and is_inside(self.view_profile.name_scroll):
-                target = self.view_profile.name_scroll
-            elif hasattr(self.view_profile, 'map_scroll') and is_inside(self.view_profile.map_scroll):
-                target = self.view_profile.map_scroll
-
+            if hasattr(self.view_profile, 'friends_scroll') and is_inside(self.view_profile.friends_scroll): target = self.view_profile.friends_scroll
+            elif hasattr(self.view_profile, 'device_scroll') and is_inside(self.view_profile.device_scroll): target = self.view_profile.device_scroll
+            elif hasattr(self.view_profile, 'name_scroll') and is_inside(self.view_profile.name_scroll): target = self.view_profile.name_scroll
+            elif hasattr(self.view_profile, 'map_scroll') and is_inside(self.view_profile.map_scroll): target = self.view_profile.map_scroll
         if target:
             try:
                 steps = 0
-                if os.name == 'nt':
-                     steps = int(-1 * (event.delta / 120)) * SCROLL_SPEED
-                elif event.num == 4:
-                     steps = -1 * SCROLL_SPEED
-                elif event.num == 5:
-                     steps = 1 * SCROLL_SPEED
-                
+                if os.name == 'nt': steps = int(-1 * (event.delta / 120)) * SCROLL_SPEED
+                elif event.num == 4: steps = -1 * SCROLL_SPEED
+                elif event.num == 5: steps = 1 * SCROLL_SPEED
                 if steps == 0: return
                 target._parent_canvas.yview_scroll(steps, "units")
             except: pass
