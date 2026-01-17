@@ -7,6 +7,7 @@ import time
 import zipfile
 from datetime import datetime
 from bs4 import BeautifulSoup
+from pathlib import Path
 
 class MemoryDownloader:
     def __init__(self, status_callback, progress_callback):
@@ -18,8 +19,7 @@ class MemoryDownloader:
     def process_data_package(self, zip_path, extract_root, download_memories=True):
         self.cancelled = False
         try:
-            # 1. Unzip
-            self.status_callback("📦 Extracting ZIP archive...")
+            self.status_callback("Extracting ZIP archive...")
             with zipfile.ZipFile(zip_path, 'r') as z:
                 files = z.namelist()
                 for i, file in enumerate(files):
@@ -29,30 +29,26 @@ class MemoryDownloader:
             
             if self.cancelled: return False
 
-            # 2. Locate folder containing the logs (e.g. "mydata~123/")
             actual_root = self._find_snap_root(extract_root)
-
-            # 3. Create staged_data INSIDE that folder
             staging_path = os.path.join(actual_root, "staged_data")
             if not os.path.exists(staging_path): 
                 os.makedirs(staging_path)
                 
-            self.status_callback("⚡ Syncing JSON and HTML logs...")
+            self.status_callback("Syncing and converting logs...")
             self._stage_all_data(actual_root, staging_path)
             
             if download_memories:
                 self.download_memories(os.path.join(staging_path, "memories_history.json"), 
                                        os.path.join(actual_root, "memories"))
             
-            self.status_callback("🎉 Data Staging Complete!")
+            self.status_callback("Data Staging Complete")
             self.progress_callback(1.0)
             return True
         except Exception as e:
-            self.status_callback(f"❌ Process Error: {str(e)}")
+            self.status_callback(f"Process Error: {str(e)}")
             return False
     
     def _find_snap_root(self, extract_root):
-        """Locates the folder containing 'json' or 'html' directories."""
         if os.path.exists(os.path.join(extract_root, "json")) or os.path.exists(os.path.join(extract_root, "html")):
             return extract_root
         
@@ -66,6 +62,7 @@ class MemoryDownloader:
     def _stage_all_data(self, root, stage_dir):
         json_src = os.path.join(root, "json")
         html_src = os.path.join(root, "html")
+        chat_media_path = Path(root) / "chat_media"
         
         # Copy native JSONs
         if os.path.exists(json_src):
@@ -73,11 +70,11 @@ class MemoryDownloader:
                 if f.endswith(".json"): 
                     shutil.copy2(os.path.join(json_src, f), os.path.join(stage_dir, f))
         
-        # Convert HTMLs
+        # Convert HTMLs with Deep Search logic
         if os.path.exists(html_src): 
-            self._convert_html_dir(html_src, stage_dir)
+            self._convert_html_dir(html_src, stage_dir, chat_media_path)
 
-    def _convert_html_dir(self, html_dir, stage_dir):
+    def _convert_html_dir(self, html_dir, stage_dir, chat_media_path):
         chat_html_dir = os.path.join(html_dir, "chat_history")
         if not os.path.exists(chat_html_dir): return
         staged_chat_path = os.path.join(stage_dir, "chat_history.json")
@@ -91,16 +88,14 @@ class MemoryDownloader:
 
         html_files = [f for f in os.listdir(chat_html_dir) if f.endswith(".html")]
         for i, filename in enumerate(html_files):
-            # Pass the filename as a fallback friend name
             raw_name = os.path.splitext(filename)[0].replace("subpage_", "")
-            friend_name, msgs = self._parse_chat_html(os.path.join(chat_html_dir, filename), raw_name)
+            # Integrated resolution logic here
+            friend_name, msgs = self._parse_chat_html(os.path.join(chat_html_dir, filename), raw_name, chat_media_path)
             
             if friend_name and msgs:
-                # Use the friend name determined by the parser or the filename
                 target_key = friend_name if friend_name != "Unknown" else raw_name
                 existing = master_chats.get(target_key, [])
                 
-                # Deduplication logic
                 seen = {f"{m.get('Created')}_{m.get('Content')}" for m in existing}
                 new_entries = [m for m in msgs if f"{m.get('Created')}_{m.get('Content')}" not in seen]
                 
@@ -111,14 +106,13 @@ class MemoryDownloader:
         with open(staged_chat_path, "w", encoding="utf-8") as f: 
             json.dump(master_chats, f, indent=4)
 
-    def _parse_chat_html(self, file_path, fallback_name):
-        """Deep Search Parser that identifies 'MEDIA' tags to link files."""
+    def _parse_chat_html(self, file_path, fallback_name, chat_media_path):
+        """Refined parser that resolves media using timestamp matching."""
         try:
             with open(file_path, 'r', encoding='utf-8') as f: 
                 soup = BeautifulSoup(f, 'html.parser')
             
             messages = []
-            # Modern Snap HTML groups messages in spans containing h4, p, and h6
             message_blocks = soup.find_all(['span'], recursive=True)
             
             for block in message_blocks:
@@ -127,23 +121,16 @@ class MemoryDownloader:
                 
                 sender_tag = block.find('h4')
                 content_tag = block.find('p')
-                # Identify if this is a Media message by looking for the "MEDIA" label
-                media_indicator = block.find('span', string="MEDIA")
+                media_indicator = block.find('span', string=lambda s: s and s.strip() in ["MEDIA", "IMAGE", "VIDEO"])
                 
                 sender = sender_tag.text.strip() if sender_tag else fallback_name
                 content = content_tag.text.strip() if content_tag else ""
                 timestamp = ts_tag.text.strip()
                 
                 media_ids = ""
-                # If "MEDIA" is found, generate an ID matching the filename format: YYYY-MM-DD_HH-MM-SS
+                # Deep Search Resolution: Match physical media to HTML timestamp
                 if media_indicator:
-                    try:
-                        # Convert "2025-03-25 20:31:32 UTC" -> "2025-03-25_20-31-32"
-                        clean_ts = timestamp.replace(" UTC", "")
-                        dt = datetime.strptime(clean_ts, "%Y-%m-%d %H:%M:%S")
-                        media_ids = dt.strftime("%Y-%m-%d_%H-%M-%S")
-                    except:
-                        pass
+                    media_ids = self._resolve_physical_media(timestamp, chat_media_path)
 
                 msg_data = {
                     "From": sender, 
@@ -159,6 +146,32 @@ class MemoryDownloader:
         except Exception as e:
             print(f"Error parsing {file_path}: {e}")
             return None, []
+
+    def _resolve_physical_media(self, timestamp_str, chat_media_path):
+        """
+        Implementation of the matching logic from converter.py.
+        Attempts to link HTML records to physical files in chat_media.
+        """
+        if not chat_media_path.exists():
+            return ""
+            
+        # Format: 2025-07-05 09:25:12 UTC -> 2025-07-05
+        date_part = timestamp_str.split(' ')[0]
+        
+        candidates = []
+        for f in chat_media_path.iterdir():
+            if f.name.startswith(date_part):
+                candidates.append(f)
+        
+        if not candidates:
+            return ""
+
+        # Prefer variants that aren't overlays or thumbnails
+        primary = [c for c in candidates if not any(x in c.name for x in ["overlay", "thumbnail"])]
+        selected = primary[0] if primary else candidates[0]
+        
+        # Return as an ID (filename base) for the loader to map
+        return os.path.splitext(selected.name)[0]
 
     def download_memories(self, json_path, download_folder):
         if not os.path.exists(json_path): return
