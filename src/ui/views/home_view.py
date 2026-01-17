@@ -66,10 +66,29 @@ class HomeView(ctk.CTkFrame):
         self.progress.set(0)
         self.progress.pack(fill="x", padx=30, pady=(15, 15))
 
-        ctk.CTkButton(self.card, text=" Save Settings & Launch", image=assets.load_icon("save", size=(24, 24)), compound="left",
+        self.btn_launch = ctk.CTkButton(self.card, text=" Save Settings & Launch", image=assets.load_icon("save", size=(24, 24)), compound="left",
                       height=45, width=240, fg_color=SNAP_BLUE, hover_color="#007ACC", text_color="white",
-                      font=("Segoe UI", 15, "bold"), corner_radius=22, command=self.save).pack(pady=10)
+                      font=("Segoe UI", 15, "bold"), corner_radius=22, command=self.save)
+        self.btn_launch.pack(pady=10)
         
+    def validate_folder(self, path):
+        """Immediately checks if the folder contains Snapchat data structure."""
+        if not path or not os.path.exists(path):
+            self.lbl_integrity.configure(text="Data Health: Invalid Path", text_color=SNAP_RED)
+            return False
+        
+        # Check for common Snapchat export indicators
+        has_json = os.path.exists(os.path.join(path, "json"))
+        has_html = os.path.exists(os.path.join(path, "html"))
+        has_staged = os.path.exists(os.path.join(path, "staged_data"))
+        
+        if not (has_json or has_html or has_staged):
+            self.lbl_integrity.configure(text="Data Health: No Snapchat data found in folder", text_color=SNAP_RED)
+            return False
+            
+        self.lbl_integrity.configure(text="Data Health: Snapchat folder recognized", text_color=SNAP_BLUE)
+        return True
+
     def confirm_restage(self):
         """Asks for confirmation before overwriting staged data."""
         root_path = self.entry_root.get()
@@ -96,7 +115,7 @@ class HomeView(ctk.CTkFrame):
 
     def force_restage(self):
         root_path = self.entry_root.get()
-        self.lbl_status.configure(text="⚡ Re-scanning local data...", text_color=SNAP_BLUE)
+        self.lbl_status.configure(text="Re-scanning local data...", text_color=SNAP_BLUE)
         self.downloader = MemoryDownloader(self.update_status, self.update_progress)
         
         def run():
@@ -137,7 +156,7 @@ class HomeView(ctk.CTkFrame):
             else:
                 font = ("Segoe UI", 13)
                 if "**" in line: 
-                    line = line.replace("**", "") # FIX: Separated from font assignment
+                    line = line.replace("**", "")
                     font = ("Segoe UI", 13, "bold")
                 ctk.CTkLabel(parent, text=line, font=font, text_color=TEXT_DIM, justify="left", anchor="w", wraplength=400).pack(fill="x", padx=15, pady=1)
 
@@ -155,6 +174,7 @@ class HomeView(ctk.CTkFrame):
                 actual_data_folder = self.downloader._find_snap_root(dest_root)
                 self.after(0, lambda: self.entry_root.delete(0, "end"))
                 self.after(0, lambda: self.entry_root.insert(0, actual_data_folder))
+                self.after(0, lambda: self.validate_folder(actual_data_folder))
                 self.after(0, self.save)
         threading.Thread(target=run_pipeline, daemon=True).start()
 
@@ -169,15 +189,18 @@ class HomeView(ctk.CTkFrame):
 
     def _browse(self, entry):
         p = filedialog.askdirectory()
-        if p: entry.delete(0, "end"), entry.insert(0, p)
+        if p: 
+            entry.delete(0, "end")
+            entry.insert(0, p)
+            self.validate_folder(p)
 
     def update_status(self, text): self.lbl_status.configure(text=text)
     def update_progress(self, val): self.progress.set(val)
     
     def save(self):
         root_path = self.entry_root.get()
-        if not root_path or not os.path.exists(root_path):
-            self.lbl_status.configure(text="❌ Invalid folder path", text_color=SNAP_RED)
+        if not self.validate_folder(root_path):
+            self.lbl_status.configure(text="Invalid folder path", text_color=SNAP_RED)
             return
         
         staged_path = os.path.join(root_path, "staged_data")
@@ -193,8 +216,8 @@ class HomeView(ctk.CTkFrame):
         
         report = self.app.data_manager.perform_integrity_check()
         chats_found = report['chats']['total'] - report['chats']['missing']
-        self.lbl_integrity.configure(text=f"✅ Linked: {chats_found} Chats, {len(memories)} Memories", text_color="#2ECC71")
-        self.lbl_status.configure(text="✅ Sync Complete", text_color="#2ECC71")
+        self.lbl_integrity.configure(text=f"Linked: {chats_found} Chats, {len(memories)} Memories", text_color="#2ECC71")
+        self.lbl_status.configure(text="Sync Complete", text_color="#2ECC71")
 
         if self.app.view_chat: self.app.view_chat.populate_friends(chat_index)
         if self.app.view_memories: self.app.view_memories.load_page(1)
@@ -202,4 +225,3 @@ class HomeView(ctk.CTkFrame):
             self.app.view_profile.destroy()
             self.app.view_profile = None
         self.btn_dl.configure(text=" Select ZIP & Process", image=assets.load_icon("download-cloud", size=(20, 20)), fg_color=BG_CARD)
-        print("✅ Data reloaded and UI refreshed.")
