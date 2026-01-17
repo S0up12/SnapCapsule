@@ -54,11 +54,9 @@ class GlobalMediaPlayer(ctk.CTkFrame):
         self.after(50, self._load_media)
 
     def _setup_ui(self):
-        # Center media display
         self.lbl_media = ctk.CTkLabel(self, text="Loading...", text_color="#555")
         self.lbl_media.place(relx=0.5, rely=0.45, anchor="center")
         
-        # 1. Top Bar
         self.top_bar = ctk.CTkFrame(self, fg_color="transparent", height=50)
         self.top_bar.place(relx=0, rely=0, relwidth=1)
         
@@ -71,7 +69,6 @@ class GlobalMediaPlayer(ctk.CTkFrame):
         ctk.CTkButton(self.top_bar, text="", image=assets.load_icon("external-link", size=(18, 18)), width=35, height=35, 
                       fg_color="#222", hover_color="#333", command=self.open_system).pack(side="right", padx=10)
         
-        # 2. Side Navigation
         self.btn_prev = ctk.CTkButton(self, text="", image=assets.load_icon("chevron-left", size=(30, 30)), 
                                       width=40, height=80, fg_color="transparent", hover_color="#222", command=self.prev_media)
         self.btn_prev.place(relx=0.01, rely=0.5, anchor="w")
@@ -80,7 +77,6 @@ class GlobalMediaPlayer(ctk.CTkFrame):
                                       width=40, height=80, fg_color="transparent", hover_color="#222", command=self.next_media)
         self.btn_next.place(relx=0.99, rely=0.5, anchor="e")
 
-        # 3. Bottom Bar & Controls
         self.bottom_bar = ctk.CTkFrame(self, fg_color="#000000", height=100, corner_radius=0)
         self.bottom_bar.place(relx=0.5, rely=1.0, relwidth=1.0, anchor="s")
 
@@ -97,7 +93,7 @@ class GlobalMediaPlayer(ctk.CTkFrame):
         self.lbl_time = ctk.CTkLabel(self.controls_frame, text="00:00 / 00:00", font=("Segoe UI", 12), width=100)
         self.lbl_time.pack(side="left", padx=15)
 
-        # Volume Icon
+        # Restored Volume Icon
         self.lbl_vol = ctk.CTkLabel(self.controls_frame, text="", image=assets.load_icon("volume-2", size=(20, 20)))
         self.lbl_vol.pack(side="left", padx=(10, 0))
 
@@ -107,7 +103,6 @@ class GlobalMediaPlayer(ctk.CTkFrame):
         self.controls_frame.pack_forget()
 
     def _cleanup_resources(self):
-        """Standardized reset to prevent resource locks during navigation."""
         self.session_id = None
         self.playing = False
         if self.job_id:
@@ -120,9 +115,7 @@ class GlobalMediaPlayer(ctk.CTkFrame):
             try: self.player.close_player()
             except: pass
             self.player = None
-        
-        # FIX: Changed image="" to image=None to resolve UserWarning
-        self.lbl_media.configure(image=None, text="Loading...")
+        self.lbl_media.configure(image="", text="Loading...")
 
     def prev_media(self, event=None):
         if self.index > 0:
@@ -164,7 +157,6 @@ class GlobalMediaPlayer(ctk.CTkFrame):
         from utils.media_resolver import MediaResolver
         img = MediaResolver.get_display_image(self.file_path)
         if img:
-            self.update_idletasks()
             w, h = max(100, self.winfo_width() - 100), max(100, self.winfo_height() - 250)
             img = ImageOps.contain(img, (w, h), method=Image.Resampling.LANCZOS)
             ctk_img = ctk.CTkImage(light_image=img, dark_image=img, size=img.size)
@@ -181,7 +173,6 @@ class GlobalMediaPlayer(ctk.CTkFrame):
                 self.fps = max(float(self.cap.get(cv2.CAP_PROP_FPS)), 1.0)
                 self.duration = self.total_frames / self.fps
                 self.player = MediaPlayer(self.file_path, ff_opts={'vn': True})
-                
                 self.controls_frame.pack(fill="x", padx=40, pady=25)
                 self.playing = True
                 self.update_video_frame(self.session_id, time.perf_counter())
@@ -191,7 +182,6 @@ class GlobalMediaPlayer(ctk.CTkFrame):
             self._show_error_state("Library Missing")
 
     def update_video_frame(self, sid, last_tick):
-        """Performance-optimized delta timing to ensure smooth real-time playback."""
         if sid != self.session_id or not self.cap or not self.playing: return
         
         target_fps_delay = 1.0 / self.fps
@@ -211,12 +201,10 @@ class GlobalMediaPlayer(ctk.CTkFrame):
                 frame = cv2.resize(frame, (int(w*scale), int(h*scale)), interpolation=cv2.INTER_LINEAR)
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 ctk_img = ctk.CTkImage(Image.fromarray(frame), size=(int(w*scale), int(h*scale)))
-                
                 self.lbl_media.configure(image=ctk_img, text="")
                 
                 elapsed = time.perf_counter() - current_tick
                 actual_wait = max(1, int((target_fps_delay - elapsed) * 1000))
-                
                 self.job_id = self.after(actual_wait, lambda: self.update_video_frame(sid, time.perf_counter()))
             else:
                 self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
@@ -239,19 +227,14 @@ class GlobalMediaPlayer(ctk.CTkFrame):
         except: pass
 
     def _show_error_state(self, message):
-        # FIX: Changed image="" to image=None to resolve UserWarning
-        self.lbl_media.configure(text=f"\n{message}", image=None, compound="top")
+        self.lbl_media.configure(text=f"\n{message}", image=assets.load_icon("alert-triangle", size=(64, 64)), compound="top")
 
     def open_system(self):
-        """Launches the system player in a separate process to avoid blocking the UI."""
         if self.file_path and os.path.exists(self.file_path):
             try:
-                if os.name == 'nt':
-                    os.startfile(self.file_path)
-                else:
-                    subprocess.Popen(['open', self.file_path])
-            except Exception as e:
-                print(f"External open error: {e}")
+                if os.name == 'nt': os.startfile(self.file_path)
+                else: subprocess.Popen(['open', self.file_path])
+            except Exception as e: print(f"External open error: {e}")
 
     def close_viewer(self):
         self._cleanup_resources()
