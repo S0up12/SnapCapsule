@@ -143,7 +143,7 @@ class HomeView(ctk.CTkFrame):
         card.pack(expand=True, fill="both", padx=10, pady=10)
         scroll = ctk.CTkScrollableFrame(card, fg_color="transparent")
         scroll.pack(fill="both", expand=True, padx=5, pady=20)
-        path = assets.get_resource_path("tutorial.md")
+        path = assets.get_tutorial_path()
         self._render_markdown(scroll, path)
 
     def _render_markdown(self, parent, filename):

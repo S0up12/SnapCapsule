@@ -1,7 +1,6 @@
 import customtkinter as ctk
 import os
 import threading
-import shutil
 from pathlib import Path
 from ui.theme import *
 from utils.assets import assets
@@ -14,6 +13,7 @@ class ToolsView(ctk.CTkFrame):
         self.data_manager = data_manager
         self.repairer = None
         self.is_processing = False
+        self.selected_tool_cmd = None
         
         try:
             ffmpeg_path = EnvironmentManager.get_ffmpeg()
@@ -24,54 +24,106 @@ class ToolsView(ctk.CTkFrame):
         self._setup_ui()
 
     def _setup_ui(self):
-        self.grid_columnconfigure(0, weight=1)
+        self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
-        container = ctk.CTkScrollableFrame(self, fg_color=BG_SIDEBAR, corner_radius=15)
-        container.grid(row=0, column=0, sticky="nsew", padx=20, pady=20)
-        container.grid_columnconfigure(0, weight=1)
+        # --- LEFT SIDEBAR: TOOL LIST ---
+        self.sidebar = ctk.CTkFrame(self, fg_color=BG_SIDEBAR, width=280, corner_radius=15)
+        self.sidebar.grid(row=0, column=0, sticky="nsew", padx=(20, 10), pady=20)
+        self.sidebar.grid_propagate(False)
+        
+        ctk.CTkLabel(self.sidebar, text="Available Tools", font=("Segoe UI", 18, "bold"), 
+                     text_color=TEXT_MAIN).pack(pady=(20, 10), padx=20, anchor="w")
 
-        # Header
-        header = ctk.CTkFrame(container, fg_color="transparent")
-        header.pack(fill="x", padx=20, pady=(20, 10))
-        ctk.CTkLabel(header, text="", image=assets.load_icon("tool", size=(24, 24))).pack(side="left", padx=(0, 10))
-        ctk.CTkLabel(header, text="System Repair Tools", font=("Segoe UI", 20, "bold"), text_color=TEXT_MAIN).pack(side="left")
+        self.tools_container = ctk.CTkScrollableFrame(self.sidebar, fg_color="transparent")
+        self.tools_container.pack(fill="both", expand=True, padx=5, pady=5)
 
-        # Repair Card
-        card = ctk.CTkFrame(container, fg_color=BG_CARD, corner_radius=12)
-        card.pack(fill="x", padx=20, pady=10)
+        # --- RIGHT CONTENT: TERMINAL & ACTIONS ---
+        self.main_content = ctk.CTkFrame(self, fg_color=BG_SIDEBAR, corner_radius=15)
+        self.main_content.grid(row=0, column=1, sticky="nsew", padx=(10, 20), pady=20)
+        self.main_content.grid_columnconfigure(0, weight=1)
+        self.main_content.grid_rowconfigure(1, weight=1)
 
-        ctk.CTkLabel(card, text="Media Integrity Restorer", font=("Segoe UI", 16, "bold"), text_color=SNAP_BLUE).pack(anchor="w", padx=20, pady=(20, 5))
-        desc = ("Scans Chat Media and Memories for corrupt files.\n"
-                "• Fixes videos incorrectly named as .jpg\n"
-                "• Extracts audio notes incorrectly named as .mp4\n"
-                "• Repairs broken JPEG headers\n"
-                "Safety: Originals are backed up to 'repair_backups' folders.")
-        ctk.CTkLabel(card, text=desc, font=("Segoe UI", 12), text_color=TEXT_DIM, justify="left").pack(anchor="w", padx=20, pady=(0, 20))
+        header = ctk.CTkFrame(self.main_content, fg_color="transparent")
+        header.grid(row=0, column=0, sticky="ew", padx=20, pady=(20, 10))
+        
+        self.lbl_active_tool = ctk.CTkLabel(header, text="Select a tool to begin", 
+                                            font=("Segoe UI", 20, "bold"), text_color=TEXT_MAIN)
+        self.lbl_active_tool.pack(side="left")
 
-        # Terminal Log
-        self.terminal = ctk.CTkTextbox(card, height=200, fg_color="#000", text_color="#2ECC71", font=("Consolas", 11))
-        self.terminal.pack(fill="x", padx=20, pady=10)
+        # Terminal View 
+        self.terminal = ctk.CTkTextbox(self.main_content, fg_color="#000", text_color="#2ECC71", 
+                                       font=("Consolas", 11), corner_radius=10)
+        self.terminal.grid(row=1, column=0, sticky="nsew", padx=20, pady=10)
         self.terminal.configure(state="disabled")
 
-        self.progress = ctk.CTkProgressBar(card, progress_color=SNAP_YELLOW)
+        # Progress Area
+        self.action_frame = ctk.CTkFrame(self.main_content, fg_color="transparent")
+        self.action_frame.grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 20))
+        
+        self.progress = ctk.CTkProgressBar(self.action_frame, progress_color=SNAP_YELLOW, height=8)
         self.progress.set(0)
-        self.progress.pack(fill="x", padx=20, pady=10)
+        self.progress.pack(fill="x", pady=(0, 15))
 
-        self.btn_run = ctk.CTkButton(card, text="Run Deep Scan & Repair", fg_color=SNAP_BLUE, hover_color="#007ACC",
-                                     height=40, font=("Segoe UI", 13, "bold"), command=self.start_repair)
-        self.btn_run.pack(pady=(0, 25))
+        # Run Button
+        self.btn_run = ctk.CTkButton(self.action_frame, text="Run Tool", fg_color=SNAP_BLUE, 
+                                     hover_color="#007ACC", height=40, font=("Segoe UI", 13, "bold"),
+                                     command=self.execute_selected_tool)
+
+        # Populate Tools via Doc Files
+        self._add_tool_item(
+            name="Media Integrity Restorer",
+            doc_id="integrity_restorer",
+            command=self.start_repair
+        )
+
+    def _add_tool_item(self, name, doc_id, command):
+        frame = ctk.CTkFrame(self.tools_container, fg_color=BG_CARD, corner_radius=8)
+        frame.pack(fill="x", pady=5, padx=5)
+        
+        btn = ctk.CTkButton(frame, text=name, anchor="w", fg_color="transparent", 
+                            hover_color=BG_HOVER, text_color=TEXT_MAIN, height=45,
+                            command=lambda: self.select_tool(name, doc_id, command), 
+                            font=("Segoe UI", 13, "bold"))
+        btn.pack(side="left", fill="x", expand=True, padx=5)
+
+    def select_tool(self, name, doc_id, command):
+        """Loads the tool description from disk and prepares execution."""
+        if self.is_processing: return
+
+        self.lbl_active_tool.configure(text=name)
+        self.selected_tool_cmd = command
+        
+        # Load content from .md file
+        doc_path = assets.get_tool_doc(doc_id)
+        description = "Documentation file missing."
+        if os.path.exists(doc_path):
+            with open(doc_path, "r", encoding="utf-8") as f:
+                description = f.read()
+
+        self.terminal.configure(state="normal")
+        self.terminal.delete("1.0", "end")
+        self.terminal.insert("end", f"{description}\n\nReady to proceed...")
+        self.terminal.configure(state="disabled")
+        
+        self.btn_run.pack(pady=(5, 0))
+        self.progress.set(0)
+
+    def execute_selected_tool(self):
+        if self.selected_tool_cmd and not self.is_processing:
+            self.btn_run.pack_forget()
+            self.selected_tool_cmd()
 
     def log(self, message):
         self.terminal.configure(state="normal")
-        self.terminal.insert("end", f"> {message}\n")
+        self.terminal.insert("end", f"\n> {message}")
         self.terminal.see("end")
         self.terminal.configure(state="disabled")
 
     def start_repair(self):
-        if self.is_processing: return
         self.terminal.configure(state="normal")
         self.terminal.delete("1.0", "end")
+        self.terminal.insert("end", "INITIALIZING MEDIA SCAN...\n")
         self.terminal.configure(state="disabled")
         
         paths = []
@@ -88,7 +140,6 @@ class ToolsView(ctk.CTkFrame):
             return
 
         self.is_processing = True
-        self.btn_run.configure(state="disabled")
         threading.Thread(target=self._run_repair_logic, args=(paths,), daemon=True).start()
 
     def _run_repair_logic(self, paths):
@@ -135,12 +186,14 @@ class ToolsView(ctk.CTkFrame):
 
                 if repaired_path and repaired_path.exists():
                     self.after(0, lambda f=file_p.name, e=new_ext: self.log(f"FIXED: {f} -> {e}"))
+                    import shutil
                     shutil.move(str(file_p), str(backup_dir / file_p.name))
                     final_dest = file_p.parent / f"{file_p.stem}{new_ext}"
                     shutil.move(str(repaired_path), str(final_dest))
                     if ts: os.utime(final_dest, (ts, ts))
                     success_count += 1
                 
+                import shutil
                 if temp_dir.exists(): shutil.rmtree(temp_dir)
 
             except Exception as e:
@@ -151,5 +204,5 @@ class ToolsView(ctk.CTkFrame):
 
     def _finish(self):
         self.is_processing = False
-        self.btn_run.configure(state="normal")
+        self.selected_tool_cmd = None
         self.data_manager.reload()

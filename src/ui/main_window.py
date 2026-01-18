@@ -83,14 +83,16 @@ class MainWindow(ctk.CTk):
             ("Chats", self.show_chats_view, "chat", "message-square"),
             ("Profile", self.show_profile_view, "profile", "user"),
             ("Mems", self.show_memories_view, "memories", "save"),
-            ("Tools", self.show_tools_view, "tools", "tool")
         ]
 
         for text, cmd, key, icon_name in nav_items:
             self._add_nav_btn(self.top_nav, text, cmd, key, icon_name)
 
+        # Bottom navigation contains Tools (above) and Settings (below)
         self.bottom_nav = ctk.CTkFrame(self.nav_frame, fg_color="transparent")
         self.bottom_nav.grid(row=2, column=0, sticky="sew", pady=15)
+        
+        self._add_nav_btn(self.bottom_nav, "Tools", self.show_tools_view, "tools", "tool")
         self._add_nav_btn(self.bottom_nav, "Settings", self.show_settings_view, "settings", "settings")
 
         self.content_frame = ctk.CTkFrame(self, fg_color=BG_MAIN, corner_radius=0)
@@ -125,7 +127,6 @@ class MainWindow(ctk.CTk):
         if self.view_chat and self.view_chat.winfo_ismapped():
             self.view_chat.cleanup()
     
-    # Grid forget all
         for view in [self.view_home, self.view_profile, self.view_chat, 
                  self.view_memories, self.view_settings, self.view_tools]:
             if view:

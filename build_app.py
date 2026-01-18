@@ -20,8 +20,7 @@ def build():
     assets_data = f"src/assets{separator}src/assets"
     
     # 2. Tutorial File (Source -> Destination)
-    # We place it in the root of the bundle
-    tutorial_data = f"tutorial.md{separator}."
+    tutorial_data = f"src/assets/docs/tutorial.md{separator}src/assets/docs"
 
     icon_path = os.path.join("src", "assets", "icons", "snapcapsule.ico")
     icon_arg = f'--icon={icon_path}' if os.path.exists(icon_path) else None
@@ -36,7 +35,7 @@ def build():
         '--noconfirm',
         '--clean',
         f'--add-data={assets_data}',
-        f'--add-data={tutorial_data}', # <--- ADDED TUTORIAL
+        f'--add-data={tutorial_data}',
         '--paths=src',
         '--hidden-import=ffpyplayer',
         '--hidden-import=PIL._tkinter_finder'

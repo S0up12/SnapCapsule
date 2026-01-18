@@ -10,10 +10,7 @@ class DataManager:
         self.chat_index = [] 
         self.memories = []
         self.profile = {} 
-        
         self.root = ""
-        self.json_path = ""
-        self.chat_media_path = ""
 
     def reload(self):
         self.media_map = {}
@@ -29,29 +26,23 @@ class DataManager:
         staged_path = os.path.join(self.root, "staged_data")
         data_src = staged_path if os.path.exists(staged_path) else self.root
 
-        possible_chat_paths = [
-            os.path.join(data_src, "chat_history.json"),
-            os.path.join(data_src, "json", "chat_history.json")
-        ]
-        
-        self.json_path = ""
-        for p in possible_chat_paths:
-            if os.path.exists(p):
-                self.json_path = p
-                break
-            
+        # Index media first so chat loading can link immediately
         self.chat_media_path = os.path.join(self.root, "chat_media")
         mem_path = self.cfg.get("memories_path") or os.path.join(self.root, "memories")
         
-        # Optimized: Single pass indexing for both chats and memories
         if os.path.exists(self.chat_media_path):
             self._index_media_directory(self.chat_media_path)
         if os.path.exists(mem_path):
             self._index_media_directory(mem_path)
         
-        if self.json_path:
+        # Load Chat History
+        json_path = os.path.join(data_src, "chat_history.json")
+        if not os.path.exists(json_path):
+            json_path = os.path.join(data_src, "json", "chat_history.json")
+
+        if os.path.exists(json_path):
             try:
-                with open(self.json_path, "r", encoding="utf-8") as f:
+                with open(json_path, "r", encoding="utf-8") as f:
                     self.raw_chats = json.load(f)
                 self.chat_index = sorted(list(self.raw_chats.keys()))
             except Exception as e:
@@ -59,17 +50,13 @@ class DataManager:
         
         self._parse_memories_list(data_src)
         self._parse_profile_data(data_src)
-
-        # Linking logic now uses the pre-built map
         self._link_memories_from_map()
 
         return self.chat_index, self.memories, self.profile
 
     def _index_media_directory(self, folder_path):
+        """Builds a map of filenames and unique Snapchat IDs to full paths."""
         if not os.path.exists(folder_path): return
-    
-        media_map = self.media_map
-        splitext = os.path.splitext
     
         with os.scandir(folder_path) as it:
             for entry in it:
@@ -77,45 +64,60 @@ class DataManager:
             
                 name = entry.name
                 path = entry.path
-                name_no_ext, _ = splitext(name)
+                name_no_ext = os.path.splitext(name)[0]
             
-                media_map[name] = path
-                media_map[name_no_ext] = path
+                # Map full filename and name without extension
+                self.media_map[name] = path
+                self.media_map[name_no_ext] = path
             
-            if "_" in name:
-                parts = name.split("_", 1)
-                mid_with_ext = parts[1]
-                mid = splitext(mid_with_ext)[0]
+                # Handle Snapchat ID extraction (ID is usually after the first underscore)
+                if "_" in name:
+                    parts = name.split("_", 1)
+                    mid_with_ext = parts[1]
+                    mid = os.path.splitext(mid_with_ext)[0]
 
-                clean_id = mid.replace("_image", "").replace("_caption", "")
-                
-                if clean_id not in media_map or name.endswith("_image.jpg"):
-                    media_map[clean_id] = path
+                    # Strip common suffixes to get the base ID
+                    clean_id = mid.replace("media~", "").replace("overlay~", "").replace("_image", "").replace("_caption", "")
+                    
+                    # Store clean ID if not present, or if this is the primary image
+                    if clean_id not in self.media_map or "_image" in name:
+                        self.media_map[clean_id] = path
 
     def get_chat_messages(self, friend_name):
         if friend_name not in self.raw_chats: return []
         raw_msgs = self.raw_chats[friend_name]
         clean_msgs = []
+        
         for msg in raw_msgs:
             txt = msg.get("Content") or ""
             media_ids = msg.get("Media IDs", "")
             files = []
+            
             if media_ids:
+                # Handle both list format and string 'ID | ID' format
                 ids = media_ids if isinstance(media_ids, list) else str(media_ids).split(" | ")
                 for mid in ids:
-                    if mid in self.media_map: files.append(self.media_map[mid])
+                    mid = mid.strip()
+                    if mid in self.media_map:
+                        files.append(self.media_map[mid])
             
             date_str = msg.get("Created", "")
             nice_date = date_str
             try:
                 if "UTC" in date_str:
                     dt = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S UTC")
-                    nice_date = dt.strftime("%Y-%m-%d %H:%M")
                 else:
                     dt = datetime.fromisoformat(date_str)
-                    nice_date = dt.strftime("%Y-%m-%d %H:%M")
+                nice_date = dt.strftime("%Y-%m-%d %H:%M")
             except: pass
-            clean_msgs.append({"sender": msg.get("From", "Unknown"), "date": nice_date, "text": txt, "media": files})
+            
+            clean_msgs.append({
+                "sender": msg.get("From", "Unknown"), 
+                "date": nice_date, 
+                "text": txt, 
+                "media": files
+            })
+            
         return clean_msgs[::-1]
 
     def _parse_memories_list(self, data_src):
@@ -130,13 +132,11 @@ class DataManager:
         self.memories = [{"date": i.get("Date", ""), "type": i.get("Media Type", ""), "path": None, "url": i.get("Media Download Url", "")} for i in raw_list]
 
     def _link_memories_from_map(self):
-        """Links memory metadata to physical files using the pre-built media_map."""
         for mem in self.memories:
             try:
                 date_str = mem['date']
                 if "UTC" in date_str:
                     dt = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S UTC")
-                    # Memory filenames use the YYYY-MM-DD_HH-MM-SS format
                     prefix = dt.strftime("%Y-%m-%d_%H-%M-%S")
                     if prefix in self.media_map:
                         mem['path'] = self.media_map[prefix]
@@ -189,6 +189,7 @@ class DataManager:
                 if mids:
                     ids = mids if isinstance(mids, list) else str(mids).split(" | ")
                     for mid in ids:
+                        mid = mid.strip()
                         report["chats"]["total"] += 1
                         if mid not in self.media_map: report["chats"]["missing"] += 1
         for mem in self.memories:
