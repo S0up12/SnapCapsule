@@ -6,21 +6,12 @@ from utils.cache_manager import cache
 import os
 
 def main():
-    # Load Config
     cfg = ConfigManager()
-    
-    # Initialize Data Manager
     data_manager = DataManager(cfg)
     
-    # Initialize Thumbnail Cache
-    # We use the configured data root as the base, or default to current dir
-    root_path = cfg.get("data_root")
-    if not root_path:
-        root_path = os.getcwd()
-    
-    cache.init(root_path)
+    # Initialize Cache in standard system location
+    cache.init()
 
-    # Start App
     app = MainWindow(data_manager, cfg)
     app.mainloop()
 

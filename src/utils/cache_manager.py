@@ -1,6 +1,7 @@
 import os
 import hashlib
 from PIL import Image
+from pathlib import Path
 
 class ThumbnailCache:
     _instance = None
@@ -11,48 +12,39 @@ class ThumbnailCache:
             cls._instance.initialized = False
         return cls._instance
 
-    def init(self, root_dir):
+    def init(self):
+        """Initializes cache in the standard Windows Local AppData location."""
         if self.initialized: return
         
-        self.cache_dir = os.path.join(root_dir, "cache", "thumbnails")
-        if not os.path.exists(self.cache_dir):
-            os.makedirs(self.cache_dir, exist_ok=True)
+        # Resolve Local AppData for high-volume cache data
+        local_dir = os.environ.get('LOCALAPPDATA', os.environ.get('TEMP', os.getcwd()))
+        self.cache_dir = Path(local_dir) / "SnapCapsule" / "Thumbnails"
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
             
         print(f"[DEBUG] Cache initialized at: {self.cache_dir}")
         self.initialized = True
 
     def get(self, video_path):
-        """Returns the PIL Image if cached, otherwise None"""
         if not self.initialized: return None
-        
         thumb_path = self._get_path(video_path)
-        if os.path.exists(thumb_path):
+        if thumb_path.exists():
             try:
-                # We return the image so it can be used immediately
                 return Image.open(thumb_path)
             except:
                 return None
         return None
 
     def save(self, video_path, pil_img):
-        """Saves a PIL Image to the cache"""
         if not self.initialized or not pil_img: return
-        
         try:
             thumb_path = self._get_path(video_path)
-            # Optimize: Convert to RGB and save as optimized JPEG
             pil_img.convert("RGB").save(thumb_path, "JPEG", quality=60, optimize=True)
         except Exception as e:
             print(f"[ERROR] Cache save failed: {e}")
 
     def _get_path(self, video_path):
-        # --- THE FIX IS HERE ---
-        # Normalize the path to ensure it is absolute and uses consistent separators
         norm_path = os.path.normpath(os.path.abspath(video_path))
-        
-        # Hash the normalized path so it is always the same for this file
         h = hashlib.md5(norm_path.encode('utf-8')).hexdigest()
-        return os.path.join(self.cache_dir, f"{h}.jpg")
+        return self.cache_dir / f"{h}.jpg"
 
-# Global singleton
 cache = ThumbnailCache()

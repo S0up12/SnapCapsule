@@ -1,41 +1,41 @@
 import json
 import os
-
-CONFIG_FILE = "config.json"
-
-DEFAULT_CONFIG = {
-    "data_root": "",
-    "memories_path": "",
-    "appearance_mode": "System" # Default to System
-}
+from pathlib import Path
 
 class ConfigManager:
     def __init__(self):
-        self.config = DEFAULT_CONFIG.copy()
+        # Resolve standard Windows AppData (Roaming) path
+        self.app_data_dir = Path(os.environ.get('APPDATA', Path.home())) / "SnapCapsule"
+        self.app_data_dir.mkdir(parents=True, exist_ok=True)
+        self.config_file = self.app_data_dir / "config.json"
+        
+        self.default_config = {
+            "data_root": "",
+            "memories_path": "",
+            "appearance_mode": "System"
+        }
+        self.config = self.default_config.copy()
         self.load_config()
 
     def load_config(self):
-        if os.path.exists(CONFIG_FILE):
+        if self.config_file.exists():
             try:
-                with open(CONFIG_FILE, "r") as f:
+                with open(self.config_file, "r") as f:
                     loaded = json.load(f)
-                    # Merge loaded values into the default config
-                    for key in DEFAULT_CONFIG:
+                    for key in self.default_config:
                         if key in loaded:
                             self.config[key] = loaded[key]
             except:
-                self.config = DEFAULT_CONFIG.copy()
+                self.config = self.default_config.copy()
 
     def save_config(self, data_root, memories_path, appearance_mode=None):
         self.config["data_root"] = data_root
         self.config["memories_path"] = memories_path
-        
-        # FIX: Explicitly update the dictionary before writing to file
         if appearance_mode:
             self.config["appearance_mode"] = appearance_mode
         
-        with open(CONFIG_FILE, "w") as f:
+        with open(self.config_file, "w") as f:
             json.dump(self.config, f, indent=4)
 
     def get(self, key):
-        return self.config.get(key, DEFAULT_CONFIG.get(key, ""))
+        return self.config.get(key, self.default_config.get(key, ""))
