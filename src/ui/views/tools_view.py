@@ -5,8 +5,7 @@ import shutil
 from pathlib import Path
 from ui.theme import *
 from utils.assets import assets
-# Import from the new location in utils
-from utils.repair import MediaRepairCore, EnvironmentManager 
+from utils.repair import MediaRepairCore, EnvironmentManager
 
 class ToolsView(ctk.CTkFrame):
     def __init__(self, parent, config_manager, data_manager):
@@ -16,12 +15,11 @@ class ToolsView(ctk.CTkFrame):
         self.repairer = None
         self.is_processing = False
         
-        # Initialize repair core with FFmpeg environment path
         try:
             ffmpeg_path = EnvironmentManager.get_ffmpeg()
             self.repairer = MediaRepairCore(ffmpeg_path)
         except Exception as e:
-            print(f"Repair tool initialization failed: {e}")
+            self.log(f"Critical Error: FFmpeg not found. {e}")
 
         self._setup_ui()
 
@@ -33,124 +31,125 @@ class ToolsView(ctk.CTkFrame):
         container.grid(row=0, column=0, sticky="nsew", padx=20, pady=20)
         container.grid_columnconfigure(0, weight=1)
 
-        # Header using the new 'tool' icon
+        # Header
         header = ctk.CTkFrame(container, fg_color="transparent")
         header.pack(fill="x", padx=20, pady=(20, 10))
-        
-        icon_tool = assets.load_icon("tool", size=(24, 24))
-        ctk.CTkLabel(header, text="", image=icon_tool).pack(side="left", padx=(0, 10))
-        ctk.CTkLabel(header, text="Media Repair Toolbox", font=("Segoe UI", 20, "bold"), text_color=TEXT_MAIN).pack(side="left")
+        ctk.CTkLabel(header, text="", image=assets.load_icon("tool", size=(24, 24))).pack(side="left", padx=(0, 10))
+        ctk.CTkLabel(header, text="System Repair Tools", font=("Segoe UI", 20, "bold"), text_color=TEXT_MAIN).pack(side="left")
 
-        # Tool Description Card
+        # Repair Card
         card = ctk.CTkFrame(container, fg_color=BG_CARD, corner_radius=12)
         card.pack(fill="x", padx=20, pady=10)
 
-        ctk.CTkLabel(card, text="Snapchat Media Restorer", font=("Segoe UI", 16, "bold"), text_color=SNAP_BLUE).pack(anchor="w", padx=20, pady=(20, 5))
-        ctk.CTkLabel(card, text="Safely fixes .jpg files that are actually MP4s or have broken headers.\nOriginal files are moved to 'repair_backups' before replacement.", 
-                     font=("Segoe UI", 12), text_color=TEXT_DIM, justify="left").pack(anchor="w", padx=20, pady=(0, 20))
+        ctk.CTkLabel(card, text="Media Integrity Restorer", font=("Segoe UI", 16, "bold"), text_color=SNAP_BLUE).pack(anchor="w", padx=20, pady=(20, 5))
+        desc = ("Scans Chat Media and Memories for corrupt files.\n"
+                "• Fixes videos incorrectly named as .jpg\n"
+                "• Extracts audio notes incorrectly named as .mp4\n"
+                "• Repairs broken JPEG headers\n"
+                "Safety: Originals are backed up to 'repair_backups' folders.")
+        ctk.CTkLabel(card, text=desc, font=("Segoe UI", 12), text_color=TEXT_DIM, justify="left").pack(anchor="w", padx=20, pady=(0, 20))
 
-        # Status & Progress
-        self.lbl_status = ctk.CTkLabel(card, text="Ready", font=("Segoe UI", 12, "bold"), text_color=TEXT_DIM)
-        self.lbl_status.pack(pady=(0, 5))
+        # Terminal Log
+        self.terminal = ctk.CTkTextbox(card, height=200, fg_color="#000", text_color="#2ECC71", font=("Consolas", 11))
+        self.terminal.pack(fill="x", padx=20, pady=10)
+        self.terminal.configure(state="disabled")
 
         self.progress = ctk.CTkProgressBar(card, progress_color=SNAP_YELLOW)
         self.progress.set(0)
-        self.progress.pack(fill="x", padx=40, pady=(0, 20))
+        self.progress.pack(fill="x", padx=20, pady=10)
 
-        # Action Button
-        self.btn_run = ctk.CTkButton(card, text="Start Repair Process", fg_color=SNAP_BLUE, hover_color="#007ACC",
+        self.btn_run = ctk.CTkButton(card, text="Run Deep Scan & Repair", fg_color=SNAP_BLUE, hover_color="#007ACC",
                                      height=40, font=("Segoe UI", 13, "bold"), command=self.start_repair)
         self.btn_run.pack(pady=(0, 25))
 
+    def log(self, message):
+        self.terminal.configure(state="normal")
+        self.terminal.insert("end", f"> {message}\n")
+        self.terminal.see("end")
+        self.terminal.configure(state="disabled")
+
     def start_repair(self):
         if self.is_processing: return
+        self.terminal.configure(state="normal")
+        self.terminal.delete("1.0", "end")
+        self.terminal.configure(state="disabled")
         
-        # Try explicit memories path first
-        target_dir = self.cfg.get("memories_path")
+        paths = []
+        root = self.cfg.get("data_root")
+        if root:
+            chat_p = os.path.join(root, "chat_media")
+            if os.path.exists(chat_p): paths.append(Path(chat_p))
         
-        # Fallback to data_root/memories if memories_path is not set
-        if not target_dir or not os.path.exists(target_dir):
-            root = self.cfg.get("data_root")
-            if root and os.path.exists(root):
-                potential_path = os.path.join(root, "memories")
-                if os.path.exists(potential_path):
-                    target_dir = potential_path
-        
-        if not target_dir or not os.path.exists(target_dir):
-            self.lbl_status.configure(
-                text="Error: Could not find media folder. Please set 'Media Storage' in Home or Settings.", 
-                text_color=SNAP_RED
-            )
+        mem_p = self.cfg.get("memories_path") or (os.path.join(root, "memories") if root else None)
+        if mem_p and os.path.exists(mem_p): paths.append(Path(mem_p))
+
+        if not paths:
+            self.log("Error: No data folders located. Please check Home settings.")
             return
 
         self.is_processing = True
         self.btn_run.configure(state="disabled")
-        self.lbl_status.configure(text="Initializing...", text_color=TEXT_MAIN)
-        threading.Thread(target=self._run_repair_logic, args=(Path(target_dir),), daemon=True).start()
+        threading.Thread(target=self._run_repair_logic, args=(paths,), daemon=True).start()
 
-    def _run_repair_logic(self, target_path):
-        """Fail-safe logic to repair files in the source folder."""
-        files = list(target_path.glob("*.jpg"))
-        if not files:
-            self.after(0, lambda: self.lbl_status.configure(text="No .jpg files found"))
-            self.is_processing = False
-            self.after(0, lambda: self.btn_run.configure(state="normal"))
+    def _run_repair_logic(self, paths):
+        all_files = []
+        for p in paths:
+            all_files.extend(list(p.glob("*.jpg")) + list(p.glob("*.mp4")))
+        
+        if not all_files:
+            self.after(0, lambda: self.log("No media files found to analyze."))
+            self._finish()
             return
 
-        # Fail-safe directories
-        backup_dir = target_path / "repair_backups"
-        temp_dir = target_path / "repair_temp"
-        backup_dir.mkdir(exist_ok=True)
-        temp_dir.mkdir(exist_ok=True)
-
-        total = len(files)
+        total = len(all_files)
         success_count = 0
 
-        for i, file_p in enumerate(files):
-            self.after(0, lambda i=i: (self.progress.set((i+1)/total), 
-                                       self.lbl_status.configure(text=f"Processing: {file_p.name}")))
-            
+        for i, file_p in enumerate(all_files):
+            self.after(0, lambda i=i: self.progress.set((i+1)/total))
             try:
-                with open(file_p, 'rb') as f:
-                    header = f.read(32)
-                
                 ts = self.repairer.parse_date(file_p.name)
                 repaired_path = None
-                new_ext = ".jpg"
+                new_ext = file_p.suffix.lower()
+                temp_dir = file_p.parent / "repair_temp"
+                backup_dir = file_p.parent / "repair_backups"
+                temp_dir.mkdir(exist_ok=True); backup_dir.mkdir(exist_ok=True)
 
-                if self.repairer.MP4_SIG in header:
-                    repaired_path = temp_dir / f"{file_p.stem}.mp4"
-                    if self.repairer.fix_video(file_p, repaired_path):
-                        new_ext = ".mp4"
-                elif not header.startswith(self.repairer.JPEG_SIG):
-                    repaired_path = temp_dir / file_p.name
-                    if not self.repairer.extract_jpg(file_p, repaired_path):
-                        repaired_path = None
+                if file_p.suffix.lower() == ".jpg":
+                    with open(file_p, 'rb') as f: header = f.read(32)
+                    if self.repairer.MP4_SIG in header:
+                        m_type = self.repairer.check_media_type(file_p)
+                        if m_type == 'video':
+                            repaired_path = temp_dir / f"{file_p.stem}.mp4"; new_ext = ".mp4"
+                            if not self.repairer.fix_video(file_p, repaired_path): repaired_path = None
+                        else:
+                            repaired_path = temp_dir / f"{file_p.stem}.mp3"; new_ext = ".mp3"
+                            if not self.repairer.fix_audio(file_p, repaired_path): repaired_path = None
+                    elif not header.startswith(self.repairer.JPEG_SIG):
+                        repaired_path = temp_dir / file_p.name
+                        if not self.repairer.extract_jpg(file_p, repaired_path): repaired_path = None
 
-                # SAFE REPLACEMENT: Only act if the repaired file actually exists
+                elif file_p.suffix.lower() == ".mp4":
+                    if self.repairer.check_media_type(file_p) == 'audio':
+                        repaired_path = temp_dir / f"{file_p.stem}.mp3"; new_ext = ".mp3"
+                        if not self.repairer.fix_audio(file_p, repaired_path): repaired_path = None
+
                 if repaired_path and repaired_path.exists():
-                    # 1. Move original to backup
+                    self.after(0, lambda f=file_p.name, e=new_ext: self.log(f"FIXED: {f} -> {e}"))
                     shutil.move(str(file_p), str(backup_dir / file_p.name))
-                    # 2. Move fixed file to original folder (with potentially new extension)
-                    final_dest = target_path / f"{file_p.stem}{new_ext}"
+                    final_dest = file_p.parent / f"{file_p.stem}{new_ext}"
                     shutil.move(str(repaired_path), str(final_dest))
-                    # 3. Restore original timestamp
-                    if ts:
-                        os.utime(final_dest, (ts, ts))
+                    if ts: os.utime(final_dest, (ts, ts))
                     success_count += 1
+                
+                if temp_dir.exists(): shutil.rmtree(temp_dir)
 
             except Exception as e:
-                print(f"Failed to process {file_p.name}: {e}")
+                self.after(0, lambda f=file_p.name, err=e: self.log(f"FAILED: {f} ({err})"))
 
-        # Cleanup temp workspace
-        if temp_dir.exists():
-            shutil.rmtree(temp_dir)
-            
-        self.after(0, self._finalize_ui, success_count)
+        self.after(0, lambda: self.log(f"\nScan Complete. {success_count} files restored."))
+        self._finish()
 
-    def _finalize_ui(self, count):
+    def _finish(self):
         self.is_processing = False
         self.btn_run.configure(state="normal")
-        self.lbl_status.configure(text=f"Done! {count} files fixed. Backups in 'repair_backups'", text_color="#2ECC71")
-        # Refresh the app database so the new files show up in the gallery
         self.data_manager.reload()

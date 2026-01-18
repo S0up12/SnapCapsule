@@ -10,6 +10,12 @@ from ui.theme import *
 from ui.components.media_viewer import GlobalMediaPlayer
 from utils.assets import assets
 
+try:
+    from ffpyplayer.player import MediaPlayer
+    AUDIO_SUPPORT = True
+except ImportError:
+    AUDIO_SUPPORT = False
+
 class SidebarChatButton(ctk.CTkFrame):
     def __init__(self, parent, display_name, username, command):
         super().__init__(parent, fg_color="transparent", corner_radius=6)
@@ -42,6 +48,82 @@ class SidebarChatButton(ctk.CTkFrame):
     def set_selected(self, selected):
         self.is_selected = selected
         self.configure(fg_color=BG_CARD if selected else "transparent")
+        
+class ChatAudioPlayer(ctk.CTkFrame):
+    """Embedded audio player for chat bubbles with transparent controls."""
+    def __init__(self, parent, file_path):
+        super().__init__(parent, fg_color=BG_CARD, corner_radius=12, height=50)
+        self.path = file_path
+        self.player = None
+        self.playing = False
+        self.duration = 0
+        self.update_job = None
+        
+        # UI Elements
+        self.icon_play = assets.load_icon("play", size=(24, 24))
+        self.icon_stop = assets.load_icon("pause", size=(24, 24))
+        
+        # Removed SNAP_BLUE; using transparent background with hover effect
+        self.btn_toggle = ctk.CTkButton(self, text="", image=self.icon_play, width=40, height=40,
+                                        fg_color="transparent", hover_color=BG_HOVER, corner_radius=20,
+                                        command=self.toggle_playback)
+        self.btn_toggle.pack(side="left", padx=10, pady=5)
+        
+        self.progress = ctk.CTkProgressBar(self, progress_color=SNAP_BLUE, height=4)
+        self.progress.set(0)
+        self.progress.pack(side="left", fill="x", expand=True, padx=(0, 10))
+        
+        self.lbl_time = ctk.CTkLabel(self, text="0:00", font=("Segoe UI", 10), text_color=TEXT_DIM)
+        self.lbl_time.pack(side="right", padx=10)
+
+    def toggle_playback(self):
+        if not AUDIO_SUPPORT: return
+        
+        if self.playing:
+            self.stop()
+        else:
+            self.play()
+
+    def play(self):
+        try:
+            self.player = MediaPlayer(self.path)
+            time.sleep(0.1)
+            meta = self.player.get_metadata()
+            self.duration = meta.get('duration', 0) if meta else 0
+            
+            self.playing = True
+            self.btn_toggle.configure(image=self.icon_stop)
+            self._update_loop()
+        except Exception as e:
+            print(f"Audio playback error: {e}")
+
+    def stop(self):
+        self.playing = False
+        if self.player:
+            self.player.close_player()
+            self.player = None
+        if self.update_job:
+            self.after_cancel(self.update_job)
+            self.update_job = None
+            
+        self.btn_toggle.configure(image=self.icon_play)
+        self.progress.set(0)
+        self.lbl_time.configure(text="0:00")
+
+    def _update_loop(self):
+        if not self.playing or not self.player: return
+        
+        pts = self.player.get_pts()
+        if pts is not None:
+            if self.duration > 0:
+                self.progress.set(pts / self.duration)
+                self.lbl_time.configure(text=f"{int(pts)//60}:{int(pts)%60:02}")
+            
+            if pts >= self.duration and self.duration > 0:
+                self.stop()
+                return
+                
+        self.update_job = self.after(100, self._update_loop)
 
 class ChatBubble(ctk.CTkFrame):
     def __init__(self, parent, message, is_me, friend_name, executor, alive_flag, media_callback):
@@ -68,7 +150,6 @@ class ChatBubble(ctk.CTkFrame):
         self.content_container = ctk.CTkFrame(body_frame, fg_color="transparent")
         self.content_container.pack(side="left", fill="x")
 
-        # Initial content
         self.add_message_content(message)
 
         try:
@@ -82,9 +163,7 @@ class ChatBubble(ctk.CTkFrame):
             w.bind("<Leave>", lambda e: self.time_lbl.pack_forget())
 
     def add_message_content(self, message):
-        """Appends text or media to this bubble's container."""
         if message['text']:
-            # FIX: Changed text_color from hardcoded "#E0E0E0" to theme-aware TEXT_MAIN
             ctk.CTkLabel(self.content_container, 
                          text=message['text'], 
                          font=("Segoe UI", 14), 
@@ -98,6 +177,13 @@ class ChatBubble(ctk.CTkFrame):
                 self.render_media_placeholder(self.content_container, path)
 
     def render_media_placeholder(self, parent, path):
+        ext = os.path.splitext(path)[1].lower()
+        
+        if ext in ['.mp3', '.wav', '.m4a']:
+            audio_player = ChatAudioPlayer(parent, path)
+            audio_player.pack(pady=5, anchor="w", fill="x")
+            return
+
         btn = ctk.CTkButton(parent, text="Loading...", width=200, height=150, 
                             fg_color="#111", hover=False, state="disabled", corner_radius=10)
         btn.pack(pady=5, anchor="w")
@@ -131,6 +217,13 @@ class ChatBubble(ctk.CTkFrame):
         ctk_img = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=pil_img.size)
         btn.configure(text="", image=ctk_img, state="normal", width=pil_img.size[0], height=pil_img.size[1],
                       command=lambda: self.media_callback(path))
+
+    def _apply_audio_ui(self, btn, path):
+        if not btn.winfo_exists(): return
+        icon = assets.load_icon("music", size=(24, 24))
+        btn.configure(text=" Voice Message", image=icon, compound="left", state="normal", 
+                      width=180, height=45, fg_color=BG_CARD, hover_color=BG_HOVER,
+                      text_color=TEXT_MAIN, command=lambda: self.media_callback(path))
 
     def _apply_error_main_thread(self, btn, is_video, path):
         if not btn.winfo_exists(): return
@@ -243,17 +336,14 @@ class ChatView(ctk.CTkFrame):
         self.lbl_user = ctk.CTkLabel(header_con, text="", font=("Segoe UI", 12), text_color=TEXT_DIM, anchor="w")
         self.lbl_user.pack(anchor="w")
         
-        # --- SMALL LOADER (For scrolling up) ---
         self.loader_frame = ctk.CTkFrame(self.right_panel, fg_color=BG_MAIN, height=30)
         self.lbl_loader = ctk.CTkLabel(self.loader_frame, text="Loading previous messages...", 
                                        text_color=SNAP_YELLOW, font=("Segoe UI", 12))
         self.lbl_loader.pack(pady=5)
         
-        # --- CHAT AREA ---
         self.scroll_chat = ctk.CTkScrollableFrame(self.right_panel, fg_color="transparent")
         self.scroll_chat.pack(fill="both", expand=True)
 
-        # --- INITIAL LOADER (Curtain for chat switch) ---
         self.initial_loader = ctk.CTkFrame(self.right_panel, fg_color=BG_MAIN)
         self.lbl_init_load = ctk.CTkLabel(self.initial_loader, text="Loading History...", 
                                           font=("Segoe UI", 16, "bold"), text_color=SNAP_YELLOW)
@@ -275,23 +365,18 @@ class ChatView(ctk.CTkFrame):
         GlobalMediaPlayer(self, playlist, idx)
 
     def update_search(self, event=None):
-        """Dynamic search that checks if the query is contained anywhere in the name."""
         query = self.search_entry.get().strip().lower()
         
         if not query:
-            # If search is empty, show original full list (first 100)
             self.populate_friends(self.chat_list)
         else:
-            # Filter based on whether the query exists ANYWHERE in the display name or username
             filtered = []
             for key in self.chat_list:
                 info = self.friend_map.get(key, {})
                 display = info.get("display", "").lower()
                 username = info.get("username", "").lower()
-                
                 if query in display or query in username:
                     filtered.append(key)
-            
             self.populate_friends(filtered)
 
     def populate_friends(self, chat_keys):
@@ -309,13 +394,9 @@ class ChatView(ctk.CTkFrame):
     def load_chat(self, chat_key):
         self.cleanup()
         self.is_rendering = True 
-        
-        # 1. Drop the Curtain immediately
-        # Placing at y=70 to start below header
         self.initial_loader.place(x=0, y=70, relwidth=1, relheight=1)
         self.initial_loader.lift()
         
-        # 2. Update Sidebar State
         if self.active_btn: self.active_btn.set_selected(False)
         for widget in self.scroll_friends.winfo_children():
             if hasattr(widget, 'chat_key') and widget.chat_key == chat_key:
@@ -324,29 +405,18 @@ class ChatView(ctk.CTkFrame):
                 break
 
         self.current_friend_key = chat_key
-        
-        # 3. Schedule the heavy lifting for next frame to let curtain render
         self.after(50, self._perform_load_chat)
 
     def _perform_load_chat(self):
-        # 4. Reset scroll while under curtain
         self.scroll_chat._parent_canvas.yview_moveto(0.0)
         self.scroll_chat.update_idletasks()
-
-        # 5. Load Data
         self.current_messages = self.data_manager.get_chat_messages(self.current_friend_key)
         self.total_msgs = len(self.current_messages)
-        
-        # 6. Calculate Initial Window (Bottom)
         self.view_end = self.total_msgs
         self.view_start = max(0, self.view_end - self.WINDOW_SIZE)
-        
-        # 7. Update Header Text
         info = self.friend_map.get(self.current_friend_key, {"display": self.current_friend_key, "username": self.current_friend_key})
         self.lbl_name.configure(text=info["display"])
         self.lbl_user.configure(text=f"@{info['username']}")
-        
-        # 8. Render
         self.render_window(target_anchor="bottom")
 
     def trigger_load_older(self):
@@ -360,11 +430,9 @@ class ChatView(ctk.CTkFrame):
         old_start = self.view_start
         self.view_start = max(0, self.view_start - self.STEP_SIZE)
         self.view_end = min(self.total_msgs, self.view_start + self.WINDOW_SIZE)
-        
         if old_start == self.view_start: 
             self._finish_rendering()
             return
-
         self.render_window(target_anchor=anchor_id)
 
     def load_newer(self):
@@ -374,11 +442,9 @@ class ChatView(ctk.CTkFrame):
         old_end = self.view_end
         self.view_end = min(self.total_msgs, self.view_end + self.STEP_SIZE)
         self.view_start = max(0, self.view_end - self.WINDOW_SIZE)
-        
         if old_end == self.view_end: 
             self._finish_rendering()
             return
-
         self.render_window(target_anchor=anchor_id)
 
     def _finish_rendering(self):
@@ -399,20 +465,15 @@ class ChatView(ctk.CTkFrame):
 
     def render_window(self, target_anchor=None):
         for w in self.scroll_chat.winfo_children(): w.destroy()
-        
         msgs = self.current_messages[self.view_start : self.view_end]
         last_date = ""
         last_sender = None
         last_minute = None
-        
         info = self.friend_map.get(self.current_friend_key, {"display": self.current_friend_key})
         anchor_widget = None
         last_bubble = None
-        
         for i, msg in enumerate(msgs):
             if not msg['text'] and not msg['media']: continue
-            
-            # Date separator logic
             d = msg['date'].split(" ")[0]
             if d != last_date:
                 f = ctk.CTkFrame(self.scroll_chat, fg_color="transparent")
@@ -423,46 +484,33 @@ class ChatView(ctk.CTkFrame):
                 except: txt = d
                 ctk.CTkLabel(f, text=txt, font=("Segoe UI", 10, "bold"), text_color="#666").pack()
                 last_date = d
-                # Reset combining on new date
                 last_sender = None
                 last_minute = None
-
-            # Combiner Logic
             current_sender = msg['sender']
-            current_time = msg['date'] # "YYYY-MM-DD HH:MM"
-
+            current_time = msg['date'] 
             if last_bubble and current_sender == last_sender and current_time == last_minute:
-                # Combine into previous bubble
                 last_bubble.add_message_content(msg)
                 bubble = last_bubble
             else:
-                # Create new bubble
                 is_me = (current_sender != self.current_friend_key)
                 bubble = ChatBubble(self.scroll_chat, msg, is_me, info["display"], self.executor, self.is_active, 
                            media_callback=self.show_media)
                 last_bubble = bubble
                 last_sender = current_sender
                 last_minute = current_time
-            
-            # Anchor tracking
             if target_anchor == "bottom" and i == len(msgs)-1:
                 anchor_widget = bubble
             elif target_anchor and bubble.msg_id == target_anchor:
                 anchor_widget = bubble
-
             if i % 10 == 0: self.update()
-
         self.update_idletasks()
-        
         if target_anchor == "bottom":
             def complete_load():
                 try: self.scroll_chat._parent_canvas.yview_moveto(1.0)
                 except: pass
-                # Lift Curtain Here
                 self.initial_loader.place_forget()
                 self._finish_rendering()
             self.after(200, complete_load)
-            
         elif anchor_widget:
             try:
                 widget_y = anchor_widget.winfo_y()
