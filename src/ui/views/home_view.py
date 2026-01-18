@@ -4,6 +4,7 @@ import threading
 import webbrowser
 from tkinter import filedialog
 from utils.downloader import MemoryDownloader
+from PIL import Image
 from ui.theme import *
 from utils.assets import assets
 
@@ -65,8 +66,24 @@ class HomeView(ctk.CTkFrame):
         self.progress = ctk.CTkProgressBar(self.card, progress_color=SNAP_YELLOW, height=6)
         self.progress.set(0)
         self.progress.pack(fill="x", padx=30, pady=(15, 15))
+        
+        icon_path = assets.get_path("save.svg")
+        pil_white = assets._render_svg(icon_path, (24, 24))
+        
+        # If rendering succeeded, force white pixels (ignoring theme)
+        if pil_white:
+            r, g, b, alpha = pil_white.split()
+            pil_white = Image.merge("RGBA", (
+                Image.new("L", pil_white.size, 255),
+                Image.new("L", pil_white.size, 255),
+                Image.new("L", pil_white.size, 255),
+                alpha
+            ))
+            icon_save = ctk.CTkImage(light_image=pil_white, dark_image=pil_white, size=(24, 24))
+        else:
+            icon_save = assets.load_icon("save", size=(24, 24))
 
-        self.btn_launch = ctk.CTkButton(self.card, text=" Save Settings & Launch", image=assets.load_icon("save", size=(24, 24)), compound="left",
+        self.btn_launch = ctk.CTkButton(self.card, text=" Save Settings & Launch", image=icon_save, compound="left",
                       height=45, width=240, fg_color=SNAP_BLUE, hover_color="#007ACC", text_color="white",
                       font=("Segoe UI", 15, "bold"), corner_radius=22, command=self.save)
         self.btn_launch.pack(pady=10)

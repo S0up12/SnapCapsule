@@ -103,10 +103,12 @@ class SettingsView(ctk.CTkFrame):
         btn_container = ctk.CTkFrame(action_row, fg_color="transparent")
         btn_container.pack(side="right", padx=10)
 
-        ctk.CTkButton(btn_container, text="Clear Cache", width=100, height=28, fg_color=BG_CARD, hover_color=BG_HOVER,
+        ctk.CTkButton(btn_container, text="Clear Cache", width=100, height=28, 
+                      fg_color=BG_CARD, hover_color=BG_HOVER, text_color=TEXT_MAIN,
                       font=("Segoe UI", 11, "bold"), command=lambda: self._clear_cache(cache_path)).pack(side="left", padx=5)
         
-        ctk.CTkButton(btn_container, text="Reset App", width=100, height=28, fg_color="#330000", hover_color="#550000",
+        ctk.CTkButton(btn_container, text="Reset App", width=100, height=28, 
+                      fg_color="#330000", hover_color="#550000", text_color="white",
                       font=("Segoe UI", 11, "bold"), command=self._confirm_reset).pack(side="left", padx=5)
 
         ctk.CTkLabel(card, text="🛡️ All data processing is strictly local. No data is sent to external servers.", 
