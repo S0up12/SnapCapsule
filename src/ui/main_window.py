@@ -6,9 +6,10 @@ from ui.views.chat_view import ChatView
 from ui.views.memories_view import MemoriesView
 from ui.views.home_view import HomeView
 from ui.views.settings_view import SettingsView 
-from ui.views.tools_view import ToolsView  # New Import
+from ui.views.tools_view import ToolsView
 from ui.theme import *
 from utils.assets import assets
+from ui.components.media_viewer import GlobalMediaPlayer
 
 SCROLL_SPEED = 20
 
@@ -45,7 +46,7 @@ class MainWindow(ctk.CTk):
         self.view_chat = None
         self.view_memories = None
         self.view_settings = None
-        self.view_tools = None # Pointer for Tools View
+        self.view_tools = None
 
         self._setup_ui()
         
@@ -77,13 +78,12 @@ class MainWindow(ctk.CTk):
         
         self.nav_buttons = {}
         
-        # Navigation Items including the new Tools view
         nav_items = [
             ("Home", self.show_home_view, "home", "home"),
             ("Chats", self.show_chats_view, "chat", "message-square"),
             ("Profile", self.show_profile_view, "profile", "user"),
             ("Mems", self.show_memories_view, "memories", "save"),
-            ("Tools", self.show_tools_view, "tools", "tool") # Using tool.svg icon
+            ("Tools", self.show_tools_view, "tools", "tool")
         ]
 
         for text, cmd, key, icon_name in nav_items:
@@ -124,8 +124,15 @@ class MainWindow(ctk.CTk):
     def _hide_all_views(self):
         if self.view_chat and self.view_chat.winfo_ismapped():
             self.view_chat.cleanup()
-        for view in [self.view_home, self.view_profile, self.view_chat, self.view_memories, self.view_settings, self.view_tools]:
-            if view: view.grid_forget()
+    
+    # Grid forget all
+        for view in [self.view_home, self.view_profile, self.view_chat, 
+                 self.view_memories, self.view_settings, self.view_tools]:
+            if view:
+                view.grid_forget()
+
+    if GlobalMediaPlayer.active_instance:
+        GlobalMediaPlayer.active_instance.close_viewer()
 
     def show_home_view(self):
         self._hide_all_views()

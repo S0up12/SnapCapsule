@@ -4,6 +4,8 @@ import sys
 from PIL import Image, ImageDraw, ImageOps
 from utils.cache_manager import cache
 from contextlib import contextmanager
+import os
+from os.path import splitext, basename, join
 
 # Context manager to suppress C-level stderr (OpenCV noise)
 @contextmanager
@@ -43,61 +45,47 @@ def composite_snap_image(base_path, overlay_path):
         return Image.open(base_path) if os.path.exists(base_path) else None
 
 def extract_video_thumbnail(video_path):
-    if not os.path.exists(video_path): return None #
+    if not os.path.exists(video_path): return None
 
-    # STEP 1: Check Cache
-    cached_img = cache.get(video_path) #
-    if cached_img:
-        return cached_img #
+    # STEP 1: Check Cache (Fastest)
+    cached_img = cache.get(video_path)
+    if cached_img: return cached_img
 
-    # NEW: Try to find the associated static image variant if extraction is difficult.
-    # Snapchat often exports an '_image.jpg' alongside the video.
+    # STEP 2: Fallback to Snapchat's sidecar image
     dir_name = os.path.dirname(video_path)
-    base_name = os.path.splitext(os.path.basename(video_path))[0]
-    img_fallback = os.path.join(dir_name, f"{base_name}_image.jpg")
+    base_name = splitext(basename(video_path))[0]
+    img_fallback = join(dir_name, f"{base_name}_image.jpg")
     
     if os.path.exists(img_fallback):
         try:
-            pil_img = Image.open(img_fallback)
-            pil_img.thumbnail((300, 300))
-            cache.save(video_path, pil_img)
-            return pil_img
+            with Image.open(img_fallback) as pil_img:
+                pil_img.thumbnail((300, 300))
+                cache.save(video_path, pil_img)
+                return pil_img
         except: pass
 
-    # STEP 2: Fast Fail
-    try:
-        if os.path.getsize(video_path) < 1024: 
-            return None #
-    except OSError:
-        return None #
-
-    # STEP 3: Extraction (Silenced)
+    # STEP 3: Optimized OpenCV extraction
     extracted_img = None
     cap = None
-    
     try:
-        # Try to suppress, but fallback if environment forbids it
-        try:
-            with suppress_stderr():
-                cap = cv2.VideoCapture(video_path, cv2.CAP_FFMPEG) #
-        except:
-            cap = cv2.VideoCapture(video_path, cv2.CAP_FFMPEG) #
-
-        if cap and cap.isOpened():
-            ret, frame = cap.read() #
-            if ret and frame is not None:
-                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) #
-                extracted_img = Image.fromarray(frame_rgb) #
-    except Exception:
-        pass
+        with suppress_stderr():
+            cap = cv2.VideoCapture(video_path)
+            if cap.isOpened():
+                # Force grab the first frame only
+                ret, frame = cap.read()
+                if ret and frame is not None:
+                    # Resize at the CV2 level (faster than Pillow)
+                    frame = cv2.resize(frame, (300, 300), interpolation=cv2.INTER_AREA)
+                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    extracted_img = Image.fromarray(frame_rgb)
+    except: pass
     finally:
-        if cap: cap.release() #
+        if cap: cap.release()
         
-    # STEP 4: Save
     if extracted_img:
-        cache.save(video_path, extracted_img) #
+        cache.save(video_path, extracted_img)
         
-    return extracted_img #
+    return extracted_img
 
 def add_play_icon(pil_img):
     """Overlays a generated play icon onto a thumbnail."""

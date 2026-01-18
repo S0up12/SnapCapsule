@@ -66,36 +66,31 @@ class DataManager:
         return self.chat_index, self.memories, self.profile
 
     def _index_media_directory(self, folder_path):
-        """
-        Scans directory once and maps variants (captions/images) to a primary ID.
-        This prevents expensive disk I/O during UI scrolling.
-        """
         if not os.path.exists(folder_path): return
-        
+    
+        media_map = self.media_map
+        splitext = os.path.splitext
+    
         with os.scandir(folder_path) as it:
             for entry in it:
                 if not entry.is_file(): continue
+            
+                name = entry.name
+                path = entry.path
+                name_no_ext, _ = splitext(name)
+            
+                media_map[name] = path
+                media_map[name_no_ext] = path
+            
+            if "_" in name:
+                parts = name.split("_", 1)
+                mid_with_ext = parts[1]
+                mid = splitext(mid_with_ext)[0]
+
+                clean_id = mid.replace("_image", "").replace("_caption", "")
                 
-                full_path = entry.path
-                filename = entry.name
-                name_no_ext, ext = os.path.splitext(filename)
-                
-                # Register the exact filename and the base name
-                self.media_map[filename] = full_path
-                self.media_map[name_no_ext] = full_path
-                
-                # Handle Snapchat's YYYY-MM-DD_ID format
-                if "_" in filename:
-                    parts = filename.split("_", 1)
-                    if len(parts) > 1:
-                        media_id = os.path.splitext(parts[1])[0]
-                        # If we have a variant like 'id_image', strip the suffix for the map
-                        clean_id = media_id.replace("_image", "").replace("_caption", "")
-                        
-                        # Store in registry. If it's a primary image/video, it takes priority.
-                        # Captions are indexed but don't overwrite primary media paths.
-                        if clean_id not in self.media_map or "_image" in filename:
-                            self.media_map[clean_id] = full_path
+                if clean_id not in media_map or name.endswith("_image.jpg"):
+                    media_map[clean_id] = path
 
     def get_chat_messages(self, friend_name):
         if friend_name not in self.raw_chats: return []
